@@ -69,7 +69,7 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="header-top">
-          <div className="logo">🛡️</div>
+          <img src="/logo.png" className="logo-img" alt="StreamShield" />
           <span className="app-name">StreamShield</span>
           <span className="app-tagline">Stream Privacy Manager</span>
         </div>

@@ -99,7 +99,6 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool) -> Result<(), String> 
         std::fs::write(&dll_path, DLL_BYTES)
             .map_err(|e| format!("Write DLL: {e}"))?;
     }
-    let dll_path_str = dll_path.to_str().ok_or("bad dll path")?.to_lowercase();
     let dll_cstr = std::ffi::CString::new(dll_path.to_str().ok_or("bad dll path")?)
         .map_err(|e| e.to_string())?;
 
