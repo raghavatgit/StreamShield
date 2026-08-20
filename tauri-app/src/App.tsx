@@ -20,11 +20,12 @@ const THEMES: ThemeOption[] = [
 export default function App() {
   const [windows, setWindows] = useState<WindowInfo[]>([]);
   const [shieldedExes, setShieldedExes] = useState<Set<string>>(new Set());
+  const [audioMutedExes, setAudioMutedExes] = useState<Set<string>>(new Set());
   const [isSelfShielded, setIsSelfShielded] = useState(false);
   const [search, setSearch] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "shielded" | "unshielded">("all");
   const [theme, setTheme] = useState<ThemeType>(() => {
-    return (localStorage.getItem("streamshield_theme") as ThemeType) || "discord";
+    return (localStorage.getItem("streamshield_theme") as ThemeType) || "cyberpunk";
   });
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -47,9 +48,10 @@ export default function App() {
 
   const loadWindows = useCallback(async () => {
     try {
-      const [wins, savedShielded, admin, selfShielded] = await Promise.all([
+      const [wins, savedShielded, savedAudioMuted, admin, selfShielded] = await Promise.all([
         invoke<WindowInfo[]>("get_windows"),
         invoke<string[]>("get_shielded_exes"),
+        invoke<string[]>("get_audio_muted_exes").catch((): string[] => []),
         invoke<boolean>("check_admin"),
         invoke<boolean>("is_self_shielded").catch(() => false),
       ]);
@@ -58,14 +60,19 @@ export default function App() {
       setIsAdmin(admin);
       setIsSelfShielded(selfShielded);
 
-      // GROUND TRUTH: Populate active shield state directly from Windows OS query
+      // Populate active shield state directly from Windows OS query
       const activeShielded = new Set<string>();
+      const activeAudioMuted = new Set<string>();
       for (const w of wins) {
         if (w.is_shielded) {
           activeShielded.add(w.exe_name);
         }
+        if (w.is_audio_muted || savedAudioMuted.includes(w.exe_name)) {
+          activeAudioMuted.add(w.exe_name);
+        }
       }
       setShieldedExes(activeShielded);
+      setAudioMutedExes(activeAudioMuted);
     } catch (e) {
       console.error(e);
     } finally {
@@ -93,8 +100,15 @@ export default function App() {
   };
 
   const handleToggle = async (win: WindowInfo, enable: boolean) => {
-    // Optimistic update
+    // Optimistic update: when enabling shield, also enable audio privacy mute by default
     setShieldedExes((prev) => {
+      const next = new Set(prev);
+      if (enable) next.add(win.exe_name);
+      else next.delete(win.exe_name);
+      return next;
+    });
+
+    setAudioMutedExes((prev) => {
       const next = new Set(prev);
       if (enable) next.add(win.exe_name);
       else next.delete(win.exe_name);
@@ -105,10 +119,13 @@ export default function App() {
       await invoke<boolean>("toggle_shield", {
         exeName: win.exe_name,
         hwnd: win.hwnd,
+        pid: win.pid,
         enable,
       });
       showToast(
-        enable ? `Shielded ${win.exe_name}` : `Unshielded ${win.exe_name}`,
+        enable
+          ? `Shielded ${win.exe_name} (Capture & Audio Muted)`
+          : `Unshielded ${win.exe_name}`,
         enable ? "success" : "info"
       );
     } catch (e) {
@@ -116,6 +133,39 @@ export default function App() {
       setShieldedExes((prev) => {
         const next = new Set(prev);
         if (enable) next.delete(win.exe_name);
+        else next.add(win.exe_name);
+        return next;
+      });
+      showToast(String(e).replace("Error: ", ""), "error");
+    }
+  };
+
+  const handleToggleAudio = async (win: WindowInfo, mute: boolean) => {
+    // Optimistic update
+    setAudioMutedExes((prev) => {
+      const next = new Set(prev);
+      if (mute) next.add(win.exe_name);
+      else next.delete(win.exe_name);
+      return next;
+    });
+
+    try {
+      await invoke<boolean>("toggle_audio_mute", {
+        exeName: win.exe_name,
+        pid: win.pid,
+        mute,
+      });
+      showToast(
+        mute
+          ? `Audio for ${win.exe_name} muted from stream`
+          : `Audio for ${win.exe_name} live on stream`,
+        mute ? "success" : "info"
+      );
+    } catch (e) {
+      // Revert on failure
+      setAudioMutedExes((prev) => {
+        const next = new Set(prev);
+        if (mute) next.delete(win.exe_name);
         else next.add(win.exe_name);
         return next;
       });
@@ -185,7 +235,7 @@ export default function App() {
 
   return (
     <div className="streamshield-root" onClick={() => themeMenuOpen && setThemeMenuOpen(false)}>
-      {/* Top Discord-Style Header */}
+      {/* Top Header */}
       <header className="app-top-header">
         <div className="header-main-row">
           <div className="header-logo-group">
@@ -346,7 +396,9 @@ export default function App() {
                 key={`${win.pid}-${win.hwnd}`}
                 window={win}
                 shielded={shieldedExes.has(win.exe_name)}
+                audioMuted={audioMutedExes.has(win.exe_name)}
                 onToggle={handleToggle}
+                onToggleAudio={handleToggleAudio}
               />
             ))}
           </div>

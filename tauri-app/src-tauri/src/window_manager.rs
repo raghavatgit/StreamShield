@@ -7,11 +7,12 @@ pub struct WindowInfo {
     pub title: String,
     pub exe_name: String,
     pub is_shielded: bool,
+    pub is_audio_muted: bool,
     pub icon_base64: Option<String>,
 }
 
 #[cfg(windows)]
-pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>) -> Vec<WindowInfo> {
+pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>, audio_muted_exes: &std::collections::HashSet<String>) -> Vec<WindowInfo> {
     use std::collections::{HashMap, HashSet};
     use winapi::shared::minwindef::{BOOL, LPARAM};
     use winapi::shared::windef::HWND;
@@ -127,6 +128,14 @@ pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>) -> V
             is_shielded = query_live_affinity(hwnd as usize);
         }
 
+        // Live Audio Mute Check and Auto-Reapply
+        let should_be_audio_muted = audio_muted_exes.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
+        let mut is_audio_muted = crate::audio_manager::get_process_audio_mute(pid);
+        if should_be_audio_muted && !is_audio_muted {
+            let _ = crate::audio_manager::set_process_audio_mute(pid, true);
+            is_audio_muted = crate::audio_manager::get_process_audio_mute(pid);
+        }
+
         // Fetch icon (cached per exe to avoid redundant GDI calls)
         let icon_base64 = icon_cache.entry(exe_lower).or_insert_with(|| {
             extract_window_or_exe_icon(hwnd, &full_path)
@@ -138,6 +147,7 @@ pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>) -> V
             title,
             exe_name,
             is_shielded,
+            is_audio_muted,
             icon_base64,
         });
     }
@@ -153,8 +163,8 @@ pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>) -> V
 
 /// Helper for background watchdog to auto-shield freshly opened windows without overhead
 #[cfg(windows)]
-pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>) {
-    if shielded_exes.is_empty() {
+pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>, audio_muted_exes: &std::collections::HashSet<String>) {
+    if shielded_exes.is_empty() && audio_muted_exes.is_empty() {
         return;
     }
     use winapi::shared::minwindef::{BOOL, LPARAM};
@@ -163,7 +173,7 @@ pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>) {
 
     unsafe extern "system" fn watch_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
         if IsWindowVisible(hwnd) == 0 { return 1; }
-        let (shielded_set, _) = &*(lparam as *const (std::collections::HashSet<String>, ()));
+        let (shielded_set, audio_set) = &*(lparam as *const (std::collections::HashSet<String>, std::collections::HashSet<String>));
 
         let mut pid: u32 = 0;
         GetWindowThreadProcessId(hwnd, &mut pid);
@@ -176,10 +186,16 @@ pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>) {
         if should_shield && !query_live_affinity(hwnd as usize) {
             let _ = crate::injector::set_window_affinity(hwnd as usize, true);
         }
+
+        let should_audio_mute = audio_set.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
+        if should_audio_mute && !crate::audio_manager::get_process_audio_mute(pid) {
+            let _ = crate::audio_manager::set_process_audio_mute(pid, true);
+        }
+
         1
     }
 
-    let payload = (shielded_exes.clone(), ());
+    let payload = (shielded_exes.clone(), audio_muted_exes.clone());
     unsafe {
         EnumWindows(Some(watch_proc), &payload as *const _ as LPARAM);
     }
@@ -407,7 +423,7 @@ unsafe fn hicon_to_base64_png(hicon: winapi::shared::windef::HICON) -> Option<St
 }
 
 #[cfg(not(windows))]
-pub fn enumerate_windows(_shielded_exes: &std::collections::HashSet<String>) -> Vec<WindowInfo> { vec![] }
+pub fn enumerate_windows(_shielded_exes: &std::collections::HashSet<String>, _audio_muted_exes: &std::collections::HashSet<String>) -> Vec<WindowInfo> { vec![] }
 
 #[cfg(not(windows))]
-pub fn auto_reapply_shields(_shielded_exes: &std::collections::HashSet<String>) {}
+pub fn auto_reapply_shields(_shielded_exes: &std::collections::HashSet<String>, _audio_muted_exes: &std::collections::HashSet<String>) {}
