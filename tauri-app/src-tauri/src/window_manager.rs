@@ -7,11 +7,15 @@ pub struct WindowInfo {
     pub title: String,
     pub exe_name: String,
     pub is_shielded: bool,
+    pub is_audio_shielded: bool,
     pub icon_base64: Option<String>,
 }
 
 #[cfg(windows)]
-pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>) -> Vec<WindowInfo> {
+pub fn enumerate_windows(
+    shielded_exes: &std::collections::HashSet<String>,
+    audio_shielded_exes: &std::collections::HashSet<String>,
+) -> Vec<WindowInfo> {
     use std::collections::{HashMap, HashSet};
     use winapi::shared::minwindef::{BOOL, LPARAM};
     use winapi::shared::windef::HWND;
@@ -127,6 +131,14 @@ pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>) -> V
             is_shielded = query_live_affinity(hwnd as usize);
         }
 
+        // Audio Stream Exclusion State
+        let is_audio_shielded = audio_shielded_exes.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower))
+            || crate::audio_bridge::is_audio_shielded(&exe_name, pid);
+
+        if is_audio_shielded {
+            crate::audio_bridge::exclude_process_audio(&exe_name, pid);
+        }
+
         // Fetch icon (cached per exe to avoid redundant GDI calls)
         let icon_base64 = icon_cache.entry(exe_lower).or_insert_with(|| {
             extract_window_or_exe_icon(hwnd, &full_path)
@@ -138,6 +150,7 @@ pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>) -> V
             title,
             exe_name,
             is_shielded,
+            is_audio_shielded,
             icon_base64,
         });
     }
@@ -153,8 +166,8 @@ pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>) -> V
 
 /// Helper for background watchdog to auto-shield freshly opened windows without overhead
 #[cfg(windows)]
-pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>) {
-    if shielded_exes.is_empty() {
+pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>, audio_shielded_exes: &std::collections::HashSet<String>) {
+    if shielded_exes.is_empty() && audio_shielded_exes.is_empty() {
         return;
     }
     use winapi::shared::minwindef::{BOOL, LPARAM};
@@ -163,7 +176,7 @@ pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>) {
 
     unsafe extern "system" fn watch_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
         if IsWindowVisible(hwnd) == 0 { return 1; }
-        let (shielded_set, _) = &*(lparam as *const (std::collections::HashSet<String>, ()));
+        let (shielded_set, audio_set) = &*(lparam as *const (std::collections::HashSet<String>, std::collections::HashSet<String>));
 
         let mut pid: u32 = 0;
         GetWindowThreadProcessId(hwnd, &mut pid);
@@ -177,10 +190,15 @@ pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>) {
             let _ = crate::injector::set_window_affinity(hwnd as usize, true);
         }
 
+        let should_audio_shield = audio_set.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
+        if should_audio_shield {
+            crate::audio_bridge::exclude_process_audio(&exe_name, pid);
+        }
+
         1
     }
 
-    let payload = (shielded_exes.clone(), ());
+    let payload = (shielded_exes.clone(), audio_shielded_exes.clone());
     unsafe {
         EnumWindows(Some(watch_proc), &payload as *const _ as LPARAM);
     }
@@ -416,7 +434,13 @@ unsafe fn hicon_to_base64_png(hicon: winapi::shared::windef::HICON) -> Option<St
 }
 
 #[cfg(not(windows))]
-pub fn enumerate_windows(_shielded_exes: &std::collections::HashSet<String>) -> Vec<WindowInfo> { vec![] }
+pub fn enumerate_windows(
+    _shielded_exes: &std::collections::HashSet<String>,
+    _audio_shielded_exes: &std::collections::HashSet<String>,
+) -> Vec<WindowInfo> { vec![] }
 
 #[cfg(not(windows))]
-pub fn auto_reapply_shields(_shielded_exes: &std::collections::HashSet<String>) {}
+pub fn auto_reapply_shields(
+    _shielded_exes: &std::collections::HashSet<String>,
+    _audio_shielded_exes: &std::collections::HashSet<String>,
+) {}

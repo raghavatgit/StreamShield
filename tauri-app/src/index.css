@@ -721,42 +721,39 @@ html, body, #root {
   flex-shrink: 0;
 }
 
-.audio-mute-btn {
+.audio-privacy-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 30px;
+  gap: 5px;
+  padding: 0 8px;
   height: 26px;
   background: var(--bg-surface);
   border: 1px solid var(--border-card);
   border-radius: 6px;
   color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-family: "JetBrains Mono", monospace;
   cursor: pointer;
   box-shadow: var(--card-shadow);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.audio-mute-btn:hover {
+.audio-privacy-btn:hover {
   background: var(--bg-card-hover);
   color: var(--text-primary);
   border-color: rgba(255, 255, 255, 0.2);
 }
 
 /* Glowing active audio shielded state */
-.audio-mute-btn.is-muted {
+.audio-privacy-btn.is-active {
   background: var(--bg-card-shielded);
   border-color: var(--border-active);
   color: var(--primary);
   box-shadow: 0 0 10px var(--glow-accent);
 }
 
-.audio-mute-btn.is-muted:hover {
-  box-shadow: 0 0 14px var(--glow-accent);
-  color: #ffffff;
-}
-
 .audio-icon {
-  width: 15px;
   height: 15px;
   display: block;
 }

@@ -20,6 +20,7 @@ const THEMES: ThemeOption[] = [
 export default function App() {
   const [windows, setWindows] = useState<WindowInfo[]>([]);
   const [shieldedExes, setShieldedExes] = useState<Set<string>>(new Set());
+  const [audioShieldedExes, setAudioShieldedExes] = useState<Set<string>>(new Set());
   const [isSelfShielded, setIsSelfShielded] = useState(false);
   const [search, setSearch] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "shielded" | "unshielded">("all");
@@ -47,10 +48,11 @@ export default function App() {
 
   const loadWindows = useCallback(async () => {
     try {
-      const [wins, admin, selfShielded] = await Promise.all([
+      const [wins, admin, selfShielded, audioExes] = await Promise.all([
         invoke<WindowInfo[]>("get_windows"),
         invoke<boolean>("check_admin"),
         invoke<boolean>("is_self_shielded").catch(() => false),
+        invoke<string[]>("get_audio_shielded_exes").catch(() => []),
       ]);
 
       setWindows(wins);
@@ -65,6 +67,7 @@ export default function App() {
         }
       }
       setShieldedExes(activeShielded);
+      setAudioShieldedExes(new Set(audioExes));
     } catch (e) {
       console.error(e);
     } finally {
@@ -92,8 +95,15 @@ export default function App() {
   };
 
   const handleToggle = async (win: WindowInfo, enable: boolean) => {
-    // Optimistic update
+    // Optimistic update: automatically synchronize audio privacy with visual shield by default
     setShieldedExes((prev) => {
+      const next = new Set(prev);
+      if (enable) next.add(win.exe_name);
+      else next.delete(win.exe_name);
+      return next;
+    });
+
+    setAudioShieldedExes((prev) => {
       const next = new Set(prev);
       if (enable) next.add(win.exe_name);
       else next.delete(win.exe_name);
@@ -108,7 +118,9 @@ export default function App() {
         enable,
       });
       showToast(
-        enable ? `Shielded ${win.exe_name}` : `Unshielded ${win.exe_name}`,
+        enable
+          ? `Shielded ${win.exe_name} (Video & Audio Isolated)`
+          : `Unshielded ${win.exe_name}`,
         enable ? "success" : "info"
       );
     } catch (e) {
@@ -120,6 +132,37 @@ export default function App() {
         return next;
       });
       showToast(String(e).replace("Error: ", ""), "error");
+    }
+  };
+
+  const handleToggleAudio = async (win: WindowInfo, enable: boolean) => {
+    setAudioShieldedExes((prev) => {
+      const next = new Set(prev);
+      if (enable) next.add(win.exe_name);
+      else next.delete(win.exe_name);
+      return next;
+    });
+
+    try {
+      await invoke<boolean>("toggle_audio_shield", {
+        exeName: win.exe_name,
+        pid: win.pid,
+        enable,
+      });
+      showToast(
+        enable
+          ? `Audio Isolated: ${win.exe_name} (Private in headphones)`
+          : `Audio Stream Live: ${win.exe_name}`,
+        enable ? "success" : "info"
+      );
+    } catch (e) {
+      setAudioShieldedExes((prev) => {
+        const next = new Set(prev);
+        if (enable) next.delete(win.exe_name);
+        else next.add(win.exe_name);
+        return next;
+      });
+      showToast(String(e), "error");
     }
   };
 
@@ -346,7 +389,9 @@ export default function App() {
                 key={`${win.pid}-${win.hwnd}`}
                 window={win}
                 shielded={shieldedExes.has(win.exe_name)}
+                audioShielded={audioShieldedExes.has(win.exe_name)}
                 onToggle={handleToggle}
+                onToggleAudio={handleToggleAudio}
               />
             ))}
           </div>

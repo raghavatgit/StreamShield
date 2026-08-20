@@ -4,6 +4,7 @@
 mod window_manager;
 mod injector;
 mod config;
+mod audio_bridge;
 
 use std::sync::Mutex;
 use tauri::{
@@ -57,13 +58,16 @@ fn tray_status_text(count: usize) -> String {
     if count == 0 {
         "No apps shielded".to_string()
     } else {
-        format!("🛡️  {} app{} hidden from capture", count, if count == 1 { "" } else { "s" })
+        format!("🛡️  {} app{} hidden from stream", count, if count == 1 { "" } else { "s" })
     }
 }
 
 fn update_tray_status(state: &AppState) {
-    let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();
-    let wins = window_manager::enumerate_windows(&shielded);
+    let (shielded, audio_shielded) = {
+        let cfg = state.config.lock().unwrap();
+        (cfg.shielded_exes.clone(), cfg.audio_shielded_exes.clone())
+    };
+    let wins = window_manager::enumerate_windows(&shielded, &audio_shielded);
     let active_count = wins.iter().filter(|w| w.is_shielded).count();
     if let Ok(guard) = state.tray_status.lock() {
         if let Some(mi) = guard.as_ref() {
@@ -76,8 +80,11 @@ fn update_tray_status(state: &AppState) {
 
 #[tauri::command]
 fn get_windows(state: State<AppState>) -> Vec<WindowInfo> {
-    let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();
-    let wins = window_manager::enumerate_windows(&shielded);
+    let (shielded, audio_shielded) = {
+        let cfg = state.config.lock().unwrap();
+        (cfg.shielded_exes.clone(), cfg.audio_shielded_exes.clone())
+    };
+    let wins = window_manager::enumerate_windows(&shielded, &audio_shielded);
     let active_count = wins.iter().filter(|w| w.is_shielded).count();
     if let Ok(guard) = state.tray_status.lock() {
         if let Some(mi) = guard.as_ref() {
@@ -88,14 +95,24 @@ fn get_windows(state: State<AppState>) -> Vec<WindowInfo> {
 }
 
 #[tauri::command]
-fn toggle_shield(exe_name: String, hwnd: usize, _pid: u32, enable: bool, state: State<AppState>) -> Result<bool, String> {
+fn toggle_shield(exe_name: String, hwnd: usize, pid: u32, enable: bool, state: State<AppState>) -> Result<bool, String> {
     injector::set_window_affinity(hwnd, enable)?;
+
+    // Automatically synchronize stream audio exclusion with visual shield
+    if enable {
+        audio_bridge::exclude_process_audio(&exe_name, pid);
+    } else {
+        audio_bridge::include_process_audio(&exe_name, pid);
+    }
+
     {
         let mut config = state.config.lock().map_err(|e| e.to_string())?;
         if enable {
-            config.shielded_exes.insert(exe_name);
+            config.shielded_exes.insert(exe_name.clone());
+            config.audio_shielded_exes.insert(exe_name);
         } else {
             config.shielded_exes.remove(&exe_name);
+            config.audio_shielded_exes.remove(&exe_name);
         }
         save_config(&config);
     }
@@ -104,15 +121,43 @@ fn toggle_shield(exe_name: String, hwnd: usize, _pid: u32, enable: bool, state: 
 }
 
 #[tauri::command]
+fn toggle_audio_shield(exe_name: String, pid: u32, enable: bool, state: State<AppState>) -> Result<bool, String> {
+    if enable {
+        audio_bridge::exclude_process_audio(&exe_name, pid);
+    } else {
+        audio_bridge::include_process_audio(&exe_name, pid);
+    }
+
+    {
+        let mut config = state.config.lock().map_err(|e| e.to_string())?;
+        if enable {
+            config.audio_shielded_exes.insert(exe_name);
+        } else {
+            config.audio_shielded_exes.remove(&exe_name);
+        }
+        save_config(&config);
+    }
+    Ok(enable)
+}
+
+#[tauri::command]
 fn get_shielded_exes(state: State<AppState>) -> Vec<String> {
     state.config.lock().map(|c| c.shielded_exes.iter().cloned().collect()).unwrap_or_default()
 }
 
 #[tauri::command]
+fn get_audio_shielded_exes(state: State<AppState>) -> Vec<String> {
+    state.config.lock().map(|c| c.audio_shielded_exes.iter().cloned().collect()).unwrap_or_default()
+}
+
+#[tauri::command]
 fn reapply_shields(state: State<AppState>) -> Vec<String> {
-    let exes = state.config.lock().unwrap().shielded_exes.clone();
-    let res = window_manager::enumerate_windows(&exes).into_iter()
-        .filter(|w| exes.contains(&w.exe_name))
+    let (shielded, audio_shielded) = {
+        let cfg = state.config.lock().unwrap();
+        (cfg.shielded_exes.clone(), cfg.audio_shielded_exes.clone())
+    };
+    let res = window_manager::enumerate_windows(&shielded, &audio_shielded).into_iter()
+        .filter(|w| shielded.contains(&w.exe_name))
         .filter(|w| injector::set_window_affinity(w.hwnd, true).is_ok())
         .map(|w| w.exe_name).collect();
     update_tray_status(&state);
@@ -180,7 +225,8 @@ fn main() {
     tauri::Builder::default()
         .manage(AppState { config: Mutex::new(load_config()), tray_status: Mutex::new(None) })
         .invoke_handler(tauri::generate_handler![
-            get_windows, toggle_shield, get_shielded_exes, reapply_shields,
+            get_windows, toggle_shield, toggle_audio_shield,
+            get_shielded_exes, get_audio_shielded_exes, reapply_shields,
             check_admin, hide_to_tray, toggle_self_shield, is_self_shielded
         ])
         .setup(|app| {
@@ -252,9 +298,12 @@ fn main() {
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(2000));
                     if let Some(state) = app_handle.try_state::<AppState>() {
-                        let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();
-                        if !shielded.is_empty() {
-                            window_manager::auto_reapply_shields(&shielded);
+                        let (shielded, audio_shielded) = {
+                            let cfg = state.config.lock().unwrap();
+                            (cfg.shielded_exes.clone(), cfg.audio_shielded_exes.clone())
+                        };
+                        if !shielded.is_empty() || !audio_shielded.is_empty() {
+                            window_manager::auto_reapply_shields(&shielded, &audio_shielded);
                         }
                         update_tray_status(&state);
                     }
