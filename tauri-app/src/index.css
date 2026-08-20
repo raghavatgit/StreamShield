@@ -90,3 +90,7 @@ html, body, #root { height: 100%; width: 100%; overflow: hidden; font-family: va
   background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: var(--radius-md); }
 @keyframes shimmer { from { background-position:200% 0; } to { background-position:-200% 0; } }
 .shimmer-row { height: 54px; margin-bottom: 3px; }
+
+.admin-warn { background: rgba(246,173,85,0.12); border: 1px solid rgba(246,173,85,0.35);
+  color: #f6ad55; padding: 6px 10px; border-radius: var(--radius-sm);
+  font-size: 11px; margin-bottom: 8px; }
