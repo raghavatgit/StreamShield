@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import AppRow, { WindowInfo } from "./components/AppRow";
 
-export type ThemeType = "cyberpunk" | "aurora" | "synthwave" | "oled";
+export type ThemeType = "discord" | "cyberpunk" | "neumorphic-white";
 
 interface ThemeOption {
   id: ThemeType;
@@ -12,10 +12,9 @@ interface ThemeOption {
 }
 
 const THEMES: ThemeOption[] = [
+  { id: "discord", name: "Discord Dark", colors: ["#5865f2", "#23a55a"] },
   { id: "cyberpunk", name: "Cyberpunk", colors: ["#00f0ff", "#ff007f"] },
-  { id: "aurora", name: "Aurora", colors: ["#10b981", "#38bdf8"] },
-  { id: "synthwave", name: "Synthwave", colors: ["#ff5e62", "#b5179e"] },
-  { id: "oled", name: "OLED Stealth", colors: ["#3b82f6", "#8b5cf6"] },
+  { id: "neumorphic-white", name: "Neumorphic White", colors: ["#ffffff", "#4f46e5"] },
 ];
 
 export default function App() {
@@ -25,7 +24,7 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "shielded" | "unshielded">("all");
   const [theme, setTheme] = useState<ThemeType>(() => {
-    return (localStorage.getItem("streamshield_theme") as ThemeType) || "cyberpunk";
+    return (localStorage.getItem("streamshield_theme") as ThemeType) || "discord";
   });
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -186,17 +185,14 @@ export default function App() {
 
   return (
     <div className="streamshield-root" onClick={() => themeMenuOpen && setThemeMenuOpen(false)}>
-      {/* Background ambient lighting */}
-      <div className="ambient-backdrop" />
-
-      {/* Top Header */}
+      {/* Top Discord-Style Header */}
       <header className="app-top-header">
         <div className="header-main-row">
           <div className="header-logo-group">
             <img src="/logo.png" className="app-header-logo" alt="StreamShield Logo" />
             <div className="header-text-block">
               <div className="header-app-title">StreamShield</div>
-              <div className="header-app-subtitle">Active Stream Privacy</div>
+              <div className="header-app-subtitle">Stream Privacy Manager</div>
             </div>
           </div>
 
@@ -206,16 +202,16 @@ export default function App() {
               <button
                 className="theme-picker-trigger"
                 onClick={() => setThemeMenuOpen(!themeMenuOpen)}
-                title="Change Design Preset"
+                title="Select Theme Preset"
               >
-                <span className="picker-icon">🎨</span>
+                <span className="picker-dot" />
                 <span className="picker-text">{THEMES.find((t) => t.id === theme)?.name}</span>
                 <span className="picker-caret">▾</span>
               </button>
 
               {themeMenuOpen && (
                 <div className="theme-popover-menu">
-                  <div className="theme-popover-title">Visual Themes</div>
+                  <div className="theme-popover-title">Themes</div>
                   {THEMES.map((t) => (
                     <button
                       key={t.id}
@@ -242,7 +238,7 @@ export default function App() {
         {!isAdmin && (
           <div className="admin-status-banner">
             <span className="banner-icon">⚠️</span>
-            <span>Run as Administrator to enable full multi-process shielding</span>
+            <span>Administrator permissions recommended for full process capture exclusion</span>
           </div>
         )}
 
@@ -262,7 +258,7 @@ export default function App() {
               className="batch-btn"
               onClick={handleShieldAll}
               disabled={windows.length === 0}
-              title="Shield all visible applications"
+              title="Shield all running applications"
             >
               Shield All
             </button>
@@ -277,7 +273,7 @@ export default function App() {
             <button
               className={`refresh-icon-btn ${refreshing ? "is-spinning" : ""}`}
               onClick={handleRefresh}
-              title="Refresh running application list"
+              title="Refresh window list"
             >
               ↻
             </button>
@@ -292,7 +288,7 @@ export default function App() {
           <input
             className="search-text-input"
             type="text"
-            placeholder="Search active applications or window titles..."
+            placeholder="Search processes or windows..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -339,7 +335,7 @@ export default function App() {
             <div className="empty-title-text">No Applications Found</div>
             <div className="empty-subtitle-text">
               {search
-                ? "No matching windows found. Try another search keyword."
+                ? "No matching windows found. Try another search query."
                 : "No active application windows found. Open an application and click Refresh."}
             </div>
           </div>
@@ -375,7 +371,7 @@ export default function App() {
             onClick={handleToggleSelfShield}
             title={
               isSelfShielded
-                ? "StreamShield app is currently HIDDEN from screen capture (Click to make visible)"
+                ? "StreamShield is hidden from capture (Click to make visible)"
                 : "Hide StreamShield window itself from screen capture/recording"
             }
           >

@@ -15,15 +15,13 @@ interface Props {
   onToggle: (w: WindowInfo, e: boolean) => void;
 }
 
-// Generate consistent clean gradient background for apps without native icons
 function getFallbackGradient(name: string): { bg: string; color: string } {
   const gradients = [
-    { bg: "linear-gradient(135deg, rgba(0, 240, 255, 0.15), rgba(0, 114, 255, 0.15))", color: "#00f0ff" },
-    { bg: "linear-gradient(135deg, rgba(255, 0, 128, 0.15), rgba(181, 23, 158, 0.15))", color: "#ff007f" },
-    { bg: "linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.15))", color: "#10b981" },
-    { bg: "linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.15))", color: "#f59e0b" },
-    { bg: "linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(126, 34, 206, 0.15))", color: "#a855f7" },
-    { bg: "linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(14, 165, 233, 0.15))", color: "#38bdf8" },
+    { bg: "linear-gradient(135deg, rgba(88, 101, 242, 0.15), rgba(88, 101, 242, 0.3))", color: "#5865f2" },
+    { bg: "linear-gradient(135deg, rgba(35, 165, 90, 0.15), rgba(35, 165, 90, 0.3))", color: "#23a55a" },
+    { bg: "linear-gradient(135deg, rgba(0, 240, 255, 0.15), rgba(0, 240, 255, 0.3))", color: "#00f0ff" },
+    { bg: "linear-gradient(135deg, rgba(250, 166, 26, 0.15), rgba(250, 166, 26, 0.3))", color: "#faa61a" },
+    { bg: "linear-gradient(135deg, rgba(235, 69, 158, 0.15), rgba(235, 69, 158, 0.3))", color: "#eb459e" },
   ];
   let hash = 0;
   for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) & 0xffffffff;
@@ -45,7 +43,7 @@ export default function AppRow({ window: win, shielded, onToggle }: Props) {
         }
       }}
     >
-      <div className="card-accent-line" />
+      <div className="card-accent-strip" />
 
       {/* Real Process Icon or Fallback */}
       <div className="app-icon-slot">
@@ -56,7 +54,6 @@ export default function AppRow({ window: win, shielded, onToggle }: Props) {
             className="app-native-icon"
             loading="lazy"
             onError={(e) => {
-              // On broken image, hide img so fallback shows
               (e.target as HTMLElement).style.display = "none";
             }}
           />
@@ -82,7 +79,7 @@ export default function AppRow({ window: win, shielded, onToggle }: Props) {
         </div>
       </div>
 
-      {/* Switch Toggle */}
+      {/* Modern Discord/Swift Style Squircle Toggle */}
       <div className="switch-wrapper" onClick={(e) => e.stopPropagation()}>
         <label className="toggle-control" htmlFor={`toggle-${win.hwnd}`}>
           <input
