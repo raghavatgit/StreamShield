@@ -14,7 +14,10 @@ use tauri::{
 use window_manager::WindowInfo;
 use config::{load_config, save_config, ShieldConfig};
 
-struct AppState { config: Mutex<ShieldConfig> }
+struct AppState {
+    config: Mutex<ShieldConfig>,
+    tray_status: Mutex<Option<MenuItem<tauri::Wry>>>,
+}
 
 // ── Admin helpers ────────────────────────────────────────────────────────────
 
@@ -48,6 +51,16 @@ fn relaunch_as_admin() {
     unsafe { ShellExecuteW(std::ptr::null_mut(), verb_w.as_ptr(), exe_w.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOW as i32); }
 }
 
+// ── Tray status helper ────────────────────────────────────────────────────────
+
+fn tray_status_text(count: usize) -> String {
+    if count == 0 {
+        "No apps shielded".to_string()
+    } else {
+        format!("🛡️  {} app{} hidden from capture", count, if count == 1 { "" } else { "s" })
+    }
+}
+
 // ── Tauri commands ───────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -56,10 +69,19 @@ fn get_windows() -> Vec<WindowInfo> { window_manager::enumerate_windows() }
 #[tauri::command]
 fn toggle_shield(exe_name: String, hwnd: usize, enable: bool, state: State<AppState>) -> Result<bool, String> {
     injector::set_window_affinity(hwnd, enable)?;
-    let mut config = state.config.lock().map_err(|e| e.to_string())?;
-    if enable { config.shielded_exes.insert(exe_name); }
-    else       { config.shielded_exes.remove(&exe_name); }
-    save_config(&config);
+    let count = {
+        let mut config = state.config.lock().map_err(|e| e.to_string())?;
+        if enable { config.shielded_exes.insert(exe_name); }
+        else       { config.shielded_exes.remove(&exe_name); }
+        save_config(&config);
+        config.shielded_exes.len()
+    };
+    // Update tray status label directly via stored handle
+    if let Ok(guard) = state.tray_status.lock() {
+        if let Some(mi) = guard.as_ref() {
+            let _ = mi.set_text(tray_status_text(count));
+        }
+    }
     Ok(true)
 }
 
@@ -93,7 +115,7 @@ fn main() {
     }
 
     tauri::Builder::default()
-        .manage(AppState { config: Mutex::new(load_config()) })
+        .manage(AppState { config: Mutex::new(load_config()), tray_status: Mutex::new(None) })
         .invoke_handler(tauri::generate_handler![
             get_windows, toggle_shield, get_shielded_exes, reapply_shields, check_admin
         ])
@@ -104,19 +126,26 @@ fn main() {
             win.set_focus()?;
 
             // ── Tray menu ────────────────────────────────────────────────
-            let show  = MenuItem::with_id(app, "show",  "🛡️  Open StreamShield", true, None::<&str>)?;
-            let sep1  = PredefinedMenuItem::separator(app)?;
-            let status = MenuItem::with_id(app, "status", "No apps shielded", false, None::<&str>)?;
-            let sep2  = PredefinedMenuItem::separator(app)?;
-            let quit  = MenuItem::with_id(app, "quit",  "Quit", true, None::<&str>)?;
-            let menu  = Menu::with_items(app, &[&show, &sep1, &status, &sep2, &quit])?;
+            let show   = MenuItem::with_id(app, "show",   "🛡️  Open StreamShield", true, None::<&str>)?;
+            let sep1   = PredefinedMenuItem::separator(app)?;
+            let status = MenuItem::with_id(app, "status", "No apps shielded",      false, None::<&str>)?;
+            let sep2   = PredefinedMenuItem::separator(app)?;
+            let quit   = MenuItem::with_id(app, "quit",   "Quit",                  true, None::<&str>)?;
+            let menu   = Menu::with_items(app, &[&show, &sep1, &status, &sep2, &quit])?;
+
+            // Store status item handle so toggle_shield can update it
+            if let Some(state) = app.try_state::<AppState>() {
+                if let Ok(mut guard) = state.tray_status.lock() {
+                    *guard = Some(status);
+                }
+            }
 
             // ── Tray icon ────────────────────────────────────────────────
             let icon = app.default_window_icon()
                 .ok_or("no window icon")?
                 .clone();
 
-            TrayIconBuilder::new()
+            TrayIconBuilder::with_id("main")
                 .icon(icon)
                 .tooltip("StreamShield — Stream Privacy Manager")
                 .menu(&menu)
