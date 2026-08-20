@@ -1,6 +1,10 @@
-workspace]
+[workspace]
 members = [
   "tauri-app/src-tauri",
   "shield_dll",
 ]
 resolver = "2"
+
+[profile.release]
+opt-level = "s"
+strip = true

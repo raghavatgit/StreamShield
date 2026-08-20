@@ -1,6 +1,3 @@
-/! shield_dll — small DLL that wraps SetWindowDisplayAffinity
-//! Compatible with GNU toolchain via winapi crate
-
 #[cfg(windows)]
 mod imp {
     use winapi::shared::windef::HWND;

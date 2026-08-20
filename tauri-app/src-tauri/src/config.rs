@@ -1,4 +1,3 @@
-/! Persists shielded app list to %APPDATA%\StreamShield\config.json
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -9,8 +8,7 @@ pub struct ShieldConfig {
 }
 
 fn config_path() -> PathBuf {
-    let mut path = dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."));
+    let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push("StreamShield");
     std::fs::create_dir_all(&path).ok();
     path.push("config.json");
@@ -19,11 +17,10 @@ fn config_path() -> PathBuf {
 
 pub fn load_config() -> ShieldConfig {
     let path = config_path();
-    if let Ok(data) = std::fs::read_to_string(&path) {
-        serde_json::from_str(&data).unwrap_or_default()
-    } else {
-        ShieldConfig::default()
-    }
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|d| serde_json::from_str(&d).ok())
+        .unwrap_or_default()
 }
 
 pub fn save_config(config: &ShieldConfig) {
@@ -32,4 +29,3 @@ pub fn save_config(config: &ShieldConfig) {
         let _ = std::fs::write(path, data);
     }
 }
-

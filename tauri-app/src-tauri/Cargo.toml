@@ -1,4 +1,4 @@
-package]
+[package]
 name = "streamshield"
 version = "0.1.0"
 edition = "2021"
@@ -28,11 +28,10 @@ winapi = { version = "0.3", features = [
   "tlhelp32",
   "psapi",
   "shellapi",
+  "errhandlingapi",
+  "winnt",
 ] }
 
 [profile.release]
 opt-level = "s"
 strip = true
-
-
-
