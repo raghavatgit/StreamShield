@@ -1,14 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import AppRow from "./components/AppRow";
-
-interface WindowInfo {
-  hwnd: number;
-  pid: number;
-  title: string;
-  exe_name: string;
-}
+import AppRow, { WindowInfo } from "./components/AppRow";
 
 export type ThemeType = "cyberpunk" | "aurora" | "synthwave" | "oled";
 
@@ -54,14 +47,23 @@ export default function App() {
 
   const loadWindows = useCallback(async () => {
     try {
-      const [wins, shielded, admin] = await Promise.all([
+      const [wins, savedShielded, admin] = await Promise.all([
         invoke<WindowInfo[]>("get_windows"),
         invoke<string[]>("get_shielded_exes"),
         invoke<boolean>("check_admin"),
       ]);
+
       setWindows(wins);
-      setShieldedExes(new Set(shielded));
       setIsAdmin(admin);
+
+      // GROUND TRUTH: Populate active shield state directly from Windows OS query
+      const activeShielded = new Set<string>();
+      for (const w of wins) {
+        if (w.is_shielded || savedShielded.includes(w.exe_name)) {
+          activeShielded.add(w.exe_name);
+        }
+      }
+      setShieldedExes(activeShielded);
     } catch (e) {
       console.error(e);
       showToast(String(e).replace("Error: ", ""), "error");
@@ -145,52 +147,52 @@ export default function App() {
   const percentage = windows.length > 0 ? Math.round((shieldedCount / windows.length) * 100) : 0;
 
   return (
-    <div className="app-container" onClick={() => themeMenuOpen && setThemeMenuOpen(false)}>
-      {/* Background ambient glow effect */}
-      <div className="ambient-spotlight" />
+    <div className="streamshield-root" onClick={() => themeMenuOpen && setThemeMenuOpen(false)}>
+      {/* Background ambient lighting */}
+      <div className="ambient-backdrop" />
 
-      {/* Header */}
-      <header className="main-header">
-        <div className="header-brand-row">
-          <div className="brand-badge">
-            <img src="/logo.png" className="app-brand-logo" alt="StreamShield Logo" />
-            <div className="brand-text">
-              <span className="brand-title">StreamShield</span>
-              <span className="brand-version">v0.1.0 • PRIVACY</span>
+      {/* Top Header */}
+      <header className="app-top-header">
+        <div className="header-main-row">
+          <div className="header-logo-group">
+            <img src="/logo.png" className="app-header-logo" alt="StreamShield Logo" />
+            <div className="header-text-block">
+              <div className="header-app-title">StreamShield</div>
+              <div className="header-app-subtitle">Active Stream Privacy</div>
             </div>
           </div>
 
-          <div className="header-actions">
+          <div className="header-action-group">
             {/* Theme Selector Popover */}
-            <div className="theme-selector-wrap" onClick={(e) => e.stopPropagation()}>
+            <div className="theme-picker-container" onClick={(e) => e.stopPropagation()}>
               <button
-                className="theme-button"
+                className="theme-picker-trigger"
                 onClick={() => setThemeMenuOpen(!themeMenuOpen)}
-                title="Change Theme Preset"
+                title="Change Design Preset"
               >
-                <span className="theme-icon">🎨</span>
-                <span className="theme-name">{THEMES.find((t) => t.id === theme)?.name}</span>
-                <span className="theme-arrow">▾</span>
+                <span className="picker-icon">🎨</span>
+                <span className="picker-text">{THEMES.find((t) => t.id === theme)?.name}</span>
+                <span className="picker-caret">▾</span>
               </button>
 
               {themeMenuOpen && (
-                <div className="theme-dropdown">
-                  <div className="theme-dropdown-header">Select Theme Preset</div>
+                <div className="theme-popover-menu">
+                  <div className="theme-popover-title">Visual Themes</div>
                   {THEMES.map((t) => (
                     <button
                       key={t.id}
-                      className={`theme-dropdown-item ${theme === t.id ? "selected" : ""}`}
+                      className={`theme-menu-choice ${theme === t.id ? "is-selected" : ""}`}
                       onClick={() => {
                         setTheme(t.id);
                         setThemeMenuOpen(false);
                       }}
                     >
-                      <div className="theme-swatch">
+                      <div className="theme-color-dots">
                         <span style={{ background: t.colors[0] }} />
                         <span style={{ background: t.colors[1] }} />
                       </div>
-                      <span className="theme-item-label">{t.name}</span>
-                      {theme === t.id && <span className="theme-check">✓</span>}
+                      <span className="theme-choice-name">{t.name}</span>
+                      {theme === t.id && <span className="theme-selected-mark">✓</span>}
                     </button>
                   ))}
                 </div>
@@ -200,44 +202,44 @@ export default function App() {
         </div>
 
         {!isAdmin && (
-          <div className="admin-alert">
-            <span className="alert-icon">⚠️</span>
-            <span>Administrator privileges recommended for full app shielding</span>
+          <div className="admin-status-banner">
+            <span className="banner-icon">⚠️</span>
+            <span>Run as Administrator to enable full multi-process shielding</span>
           </div>
         )}
 
-        {/* Status Badge & Metrics */}
-        <div className="status-overview">
-          <div className={`status-pill ${shieldedCount > 0 ? "active" : "idle"}`}>
-            <span className="status-orb" />
-            <span className="status-text">
+        {/* Status bar & Batch controls */}
+        <div className="header-status-strip">
+          <div className={`active-counter-badge ${shieldedCount > 0 ? "is-active" : "is-idle"}`}>
+            <span className="pulse-dot" />
+            <span className="counter-text">
               {shieldedCount > 0
-                ? `${shieldedCount} App${shieldedCount !== 1 ? "s" : ""} Hidden from Capture`
-                : "No Apps Shielded"}
+                ? `${shieldedCount} Application${shieldedCount !== 1 ? "s" : ""} Protected`
+                : "No Applications Shielded"}
             </span>
           </div>
 
-          <div className="quick-actions">
+          <div className="batch-controls">
             <button
-              className="action-btn"
+              className="batch-btn"
               onClick={handleShieldAll}
               disabled={windows.length === 0}
-              title="Shield all visible apps"
+              title="Shield all visible applications"
             >
               Shield All
             </button>
             <button
-              className="action-btn"
+              className="batch-btn"
               onClick={handleUnshieldAll}
               disabled={shieldedCount === 0}
-              title="Unshield all apps"
+              title="Unshield all applications"
             >
               Clear
             </button>
             <button
-              className={`refresh-action-btn ${refreshing ? "spinning" : ""}`}
+              className={`refresh-icon-btn ${refreshing ? "is-spinning" : ""}`}
               onClick={handleRefresh}
-              title="Refresh window list"
+              title="Refresh running application list"
             >
               ↻
             </button>
@@ -245,66 +247,66 @@ export default function App() {
         </div>
       </header>
 
-      {/* Search and Filter Controls */}
-      <div className="control-bar">
-        <div className="search-box">
-          <span className="search-glyph">🔍</span>
+      {/* Search & Navigation Bar */}
+      <section className="search-filter-section">
+        <div className="search-input-shell">
+          <span className="search-input-icon">🔍</span>
           <input
-            className="search-field"
+            className="search-text-input"
             type="text"
-            placeholder="Search processes or window titles..."
+            placeholder="Search active applications or window titles..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           {search && (
-            <button className="search-clear-btn" onClick={() => setSearch("")}>
+            <button className="search-clear-cross" onClick={() => setSearch("")}>
               ✕
             </button>
           )}
         </div>
 
-        <div className="filter-tabs">
+        <nav className="tab-segmented-control">
           <button
-            className={`filter-tab ${filterMode === "all" ? "active" : ""}`}
+            className={`tab-segment-btn ${filterMode === "all" ? "is-current" : ""}`}
             onClick={() => setFilterMode("all")}
           >
-            All ({windows.length})
+            All <span className="tab-count">{windows.length}</span>
           </button>
           <button
-            className={`filter-tab ${filterMode === "shielded" ? "active" : ""}`}
+            className={`tab-segment-btn ${filterMode === "shielded" ? "is-current" : ""}`}
             onClick={() => setFilterMode("shielded")}
           >
-            Shielded ({shieldedCount})
+            Shielded <span className="tab-count">{shieldedCount}</span>
           </button>
           <button
-            className={`filter-tab ${filterMode === "unshielded" ? "active" : ""}`}
+            className={`tab-segment-btn ${filterMode === "unshielded" ? "is-current" : ""}`}
             onClick={() => setFilterMode("unshielded")}
           >
-            Open ({windows.length - shieldedCount})
+            Open <span className="tab-count">{windows.length - shieldedCount}</span>
           </button>
-        </div>
-      </div>
+        </nav>
+      </section>
 
-      {/* Main Window List */}
-      <main className="window-list-scroll">
+      {/* Main List Body */}
+      <main className="app-card-viewport">
         {loading ? (
-          <div className="loading-container">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="skeleton-card" />
+          <div className="card-skeleton-stack">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="card-skeleton" />
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="empty-container">
-            <div className="empty-artwork">🛡️</div>
-            <div className="empty-heading">No Applications Found</div>
-            <div className="empty-desc">
+          <div className="empty-results-view">
+            <div className="empty-glyph">🛡️</div>
+            <div className="empty-title-text">No Applications Found</div>
+            <div className="empty-subtitle-text">
               {search
                 ? "No matching windows found. Try another search keyword."
-                : "No active desktop windows detected. Open an app and click Refresh."}
+                : "No active application windows found. Open an application and click Refresh."}
             </div>
           </div>
         ) : (
-          <div className="cards-wrapper">
+          <div className="cards-layout-stack">
             {filtered.map((win) => (
               <AppRow
                 key={`${win.pid}-${win.hwnd}`}
@@ -317,34 +319,34 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="main-footer">
-        <div className="footer-stats">
-          <div className="progress-bar-bg">
-            <div className="progress-bar-fill" style={{ width: `${percentage}%` }} />
+      {/* Bottom Footer */}
+      <footer className="app-bottom-footer">
+        <div className="footer-coverage-indicator">
+          <div className="coverage-bar-track">
+            <div className="coverage-bar-value" style={{ width: `${percentage}%` }} />
           </div>
-          <span className="stats-label">
-            <strong>{shieldedCount}</strong> of {windows.length} protected ({percentage}%)
+          <span className="coverage-text">
+            <strong>{shieldedCount}</strong> / {windows.length} Protected ({percentage}%)
           </span>
         </div>
 
         <button
-          className="tray-minimize-button"
+          className="tray-dock-btn"
           onClick={() => getCurrentWindow().hide()}
           title="Minimize StreamShield to system tray"
         >
           <span>Tray</span>
-          <span className="btn-glyph">↗</span>
+          <span className="dock-arrow">↗</span>
         </button>
       </footer>
 
-      {/* Toast Notification */}
+      {/* Floating Toast Notification */}
       {toast && (
-        <div className={`toast-notification ${toast.type || "error"}`}>
-          <span className="toast-icon">
+        <div className={`floating-toast ${toast.type || "error"}`}>
+          <span className="toast-symbol">
             {toast.type === "success" ? "✓" : toast.type === "info" ? "ℹ" : "⚠️"}
           </span>
-          <span className="toast-text">{toast.message}</span>
+          <span className="toast-message-body">{toast.message}</span>
         </div>
       )}
     </div>
