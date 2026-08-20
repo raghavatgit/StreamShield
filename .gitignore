@@ -1,21 +1,27 @@
-# Rust / Cargo
+# Rust / Cargo Build Output
 target/
+target*/
+**/target/
+**/target*/
 Cargo.lock
 
 # Node / npm
 node_modules/
 dist/
+**/node_modules/
+**/dist/
 
 # Tauri
 tauri-app/src-tauri/gen/
 tauri-app/src-tauri/target/
+tauri-app/src-tauri/target*/
 *.app
 *.dmg
 *.deb
 *.msi
 *.exe
 
-# IDE
+# IDE / System
 .vscode/
 .idea/
 *.swp
@@ -23,11 +29,9 @@ tauri-app/src-tauri/target/
 .DS_Store
 Thumbs.db
 
-# Env
+# Env & Logs
 .env
 .env.local
 .env.*.local
-
-# Logs
 *.log
 npm-debug.log*
