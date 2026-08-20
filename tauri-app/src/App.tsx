@@ -11,13 +11,6 @@ interface ThemeOption {
   colors: string[];
 }
 
-interface ObsStatus {
-  connected: boolean;
-  port: number;
-  active_sources: string[];
-  obs_process_running: boolean;
-}
-
 const THEMES: ThemeOption[] = [
   { id: "discord", name: "Discord Dark", colors: ["#5865f2", "#23a55a"] },
   { id: "cyberpunk", name: "Cyberpunk", colors: ["#00f0ff", "#ff007f"] },
@@ -27,9 +20,6 @@ const THEMES: ThemeOption[] = [
 export default function App() {
   const [windows, setWindows] = useState<WindowInfo[]>([]);
   const [shieldedExes, setShieldedExes] = useState<Set<string>>(new Set());
-  const [audioShieldedExes, setAudioShieldedExes] = useState<Set<string>>(new Set());
-  const [obsStatus, setObsStatus] = useState<ObsStatus | null>(null);
-  const [obsModalOpen, setObsModalOpen] = useState(false);
   const [isSelfShielded, setIsSelfShielded] = useState(false);
   const [search, setSearch] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "shielded" | "unshielded">("all");
@@ -57,18 +47,15 @@ export default function App() {
 
   const loadWindows = useCallback(async () => {
     try {
-      const [wins, admin, selfShielded, audioExes, obs] = await Promise.all([
+      const [wins, admin, selfShielded] = await Promise.all([
         invoke<WindowInfo[]>("get_windows"),
         invoke<boolean>("check_admin"),
         invoke<boolean>("is_self_shielded").catch(() => false),
-        invoke<string[]>("get_audio_shielded_exes").catch(() => []),
-        invoke<ObsStatus>("get_obs_status").catch(() => null),
       ]);
 
       setWindows(wins);
       setIsAdmin(admin);
       setIsSelfShielded(selfShielded);
-      if (obs) setObsStatus(obs);
 
       // Populate active shield state directly from Windows OS query
       const activeShielded = new Set<string>();
@@ -78,7 +65,6 @@ export default function App() {
         }
       }
       setShieldedExes(activeShielded);
-      setAudioShieldedExes(new Set(audioExes));
     } catch (e) {
       console.error(e);
     } finally {
@@ -114,13 +100,6 @@ export default function App() {
       return next;
     });
 
-    setAudioShieldedExes((prev) => {
-      const next = new Set(prev);
-      if (enable) next.add(win.exe_name);
-      else next.delete(win.exe_name);
-      return next;
-    });
-
     try {
       await invoke<boolean>("toggle_shield", {
         exeName: win.exe_name,
@@ -129,9 +108,7 @@ export default function App() {
         enable,
       });
       showToast(
-        enable
-          ? `Shielded ${win.exe_name} (Video & Stream Audio Protected)`
-          : `Unshielded ${win.exe_name}`,
+        enable ? `Shielded ${win.exe_name}` : `Unshielded ${win.exe_name}`,
         enable ? "success" : "info"
       );
     } catch (e) {
@@ -143,37 +120,6 @@ export default function App() {
         return next;
       });
       showToast(String(e).replace("Error: ", ""), "error");
-    }
-  };
-
-  const handleToggleAudio = async (win: WindowInfo, enable: boolean) => {
-    setAudioShieldedExes((prev) => {
-      const next = new Set(prev);
-      if (enable) next.add(win.exe_name);
-      else next.delete(win.exe_name);
-      return next;
-    });
-
-    try {
-      await invoke<boolean>("toggle_audio_shield", {
-        exeName: win.exe_name,
-        pid: win.pid,
-        enable,
-      });
-      showToast(
-        enable
-          ? `Audio Isolated: ${win.exe_name} (Private in headphones)`
-          : `Audio Stream Live: ${win.exe_name}`,
-        enable ? "success" : "info"
-      );
-    } catch (e) {
-      setAudioShieldedExes((prev) => {
-        const next = new Set(prev);
-        if (enable) next.delete(win.exe_name);
-        else next.add(win.exe_name);
-        return next;
-      });
-      showToast(String(e), "error");
     }
   };
 
@@ -240,10 +186,7 @@ export default function App() {
   return (
     <div
       className="streamshield-root"
-      onClick={() => {
-        if (themeMenuOpen) setThemeMenuOpen(false);
-        if (obsModalOpen) setObsModalOpen(false);
-      }}
+      onClick={() => themeMenuOpen && setThemeMenuOpen(false)}
     >
       {/* Top Header */}
       <header className="app-top-header">
@@ -257,55 +200,6 @@ export default function App() {
           </div>
 
           <div className="header-action-group">
-            {/* OBS Companion Status Badge */}
-            <div className="obs-badge-container" onClick={(e) => e.stopPropagation()}>
-              <button
-                className={`obs-status-pill ${
-                  obsStatus?.connected
-                    ? "is-connected"
-                    : obsStatus?.obs_process_running
-                    ? "is-running"
-                    : "is-idle"
-                }`}
-                onClick={() => setObsModalOpen(!obsModalOpen)}
-                title="OBS Studio Companion & Audio Isolation Settings"
-              >
-                <span className="obs-dot" />
-                <span className="obs-pill-label">
-                  {obsStatus?.connected
-                    ? "OBS Connected"
-                    : obsStatus?.obs_process_running
-                    ? "OBS Running"
-                    : "OBS Companion"}
-                </span>
-              </button>
-
-              {obsModalOpen && (
-                <div className="obs-popover-card">
-                  <div className="obs-popover-header">
-                    <span className="obs-popover-title">OBS Studio Companion</span>
-                    <span className={`obs-badge ${obsStatus?.connected ? "badge-green" : "badge-gray"}`}>
-                      {obsStatus?.connected ? "v5 Connected" : "Standby"}
-                    </span>
-                  </div>
-                  <p className="obs-popover-desc">
-                    StreamShield coordinates visual capture exclusion and stream audio privacy.
-                    Private audio plays 100% in your headphones while being excluded from the stream feed.
-                  </p>
-                  <div className="obs-info-box">
-                    <div className="obs-info-row">
-                      <span className="obs-info-label">WebSocket Port:</span>
-                      <span className="obs-info-val">{obsStatus?.port || 4455}</span>
-                    </div>
-                    <div className="obs-info-row">
-                      <span className="obs-info-label">Active OBS Audio Inputs:</span>
-                      <span className="obs-info-val">{obsStatus?.active_sources.length || 0}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
             {/* Theme Selector Popover */}
             <div className="theme-picker-container" onClick={(e) => e.stopPropagation()}>
               <button
@@ -455,9 +349,7 @@ export default function App() {
                 key={`${win.pid}-${win.hwnd}`}
                 window={win}
                 shielded={shieldedExes.has(win.exe_name)}
-                audioShielded={audioShieldedExes.has(win.exe_name)}
                 onToggle={handleToggle}
-                onToggleAudio={handleToggleAudio}
               />
             ))}
           </div>
