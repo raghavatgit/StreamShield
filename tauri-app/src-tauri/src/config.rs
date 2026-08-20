@@ -5,8 +5,6 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ShieldConfig {
     pub shielded_exes: HashSet<String>,
-    #[serde(default)]
-    pub audio_muted_exes: HashSet<String>,
 }
 
 fn config_path() -> PathBuf {

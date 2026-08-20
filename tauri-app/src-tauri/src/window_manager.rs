@@ -7,12 +7,11 @@ pub struct WindowInfo {
     pub title: String,
     pub exe_name: String,
     pub is_shielded: bool,
-    pub is_audio_muted: bool,
     pub icon_base64: Option<String>,
 }
 
 #[cfg(windows)]
-pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>, audio_muted_exes: &std::collections::HashSet<String>) -> Vec<WindowInfo> {
+pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>) -> Vec<WindowInfo> {
     use std::collections::{HashMap, HashSet};
     use winapi::shared::minwindef::{BOOL, LPARAM};
     use winapi::shared::windef::HWND;
@@ -67,7 +66,7 @@ pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>, audi
         let hr = DwmGetWindowAttribute(
             hwnd,
             DWMWA_CLOAKED,
-            &mut cloaked as *mut _ as _,
+            &mut cloaked as *mut _ as *mut _,
             std::mem::size_of::<u32>() as u32,
         );
         if hr == 0 && (cloaked & (DWM_CLOAKED_APP | DWM_CLOAKED_SHELL | DWM_CLOAKED_INHERITED)) != 0 {
@@ -128,14 +127,6 @@ pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>, audi
             is_shielded = query_live_affinity(hwnd as usize);
         }
 
-        // Live Audio Mute Check and Auto-Reapply
-        let should_be_audio_muted = audio_muted_exes.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
-        let mut is_audio_muted = crate::audio_manager::get_process_audio_mute(&exe_name, pid);
-        if should_be_audio_muted && !is_audio_muted {
-            let _ = crate::audio_manager::set_process_audio_mute(&exe_name, pid, true);
-            is_audio_muted = crate::audio_manager::get_process_audio_mute(&exe_name, pid);
-        }
-
         // Fetch icon (cached per exe to avoid redundant GDI calls)
         let icon_base64 = icon_cache.entry(exe_lower).or_insert_with(|| {
             extract_window_or_exe_icon(hwnd, &full_path)
@@ -147,7 +138,6 @@ pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>, audi
             title,
             exe_name,
             is_shielded,
-            is_audio_muted,
             icon_base64,
         });
     }
@@ -163,8 +153,8 @@ pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>, audi
 
 /// Helper for background watchdog to auto-shield freshly opened windows without overhead
 #[cfg(windows)]
-pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>, audio_muted_exes: &std::collections::HashSet<String>) {
-    if shielded_exes.is_empty() && audio_muted_exes.is_empty() {
+pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>) {
+    if shielded_exes.is_empty() {
         return;
     }
     use winapi::shared::minwindef::{BOOL, LPARAM};
@@ -173,7 +163,7 @@ pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>, a
 
     unsafe extern "system" fn watch_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
         if IsWindowVisible(hwnd) == 0 { return 1; }
-        let (shielded_set, audio_set) = &*(lparam as *const (std::collections::HashSet<String>, std::collections::HashSet<String>));
+        let (shielded_set, _) = &*(lparam as *const (std::collections::HashSet<String>, ()));
 
         let mut pid: u32 = 0;
         GetWindowThreadProcessId(hwnd, &mut pid);
@@ -187,15 +177,10 @@ pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>, a
             let _ = crate::injector::set_window_affinity(hwnd as usize, true);
         }
 
-        let should_audio_mute = audio_set.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
-        if should_audio_mute && !crate::audio_manager::get_process_audio_mute(&exe_name, pid) {
-            let _ = crate::audio_manager::set_process_audio_mute(&exe_name, pid, true);
-        }
-
         1
     }
 
-    let payload = (shielded_exes.clone(), audio_muted_exes.clone());
+    let payload = (shielded_exes.clone(), ());
     unsafe {
         EnumWindows(Some(watch_proc), &payload as *const _ as LPARAM);
     }
@@ -206,110 +191,109 @@ pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>, a
 fn query_live_affinity(hwnd: usize) -> bool {
     use winapi::um::winuser::GetWindowDisplayAffinity;
     const WDA_EXCLUDEFROMCAPTURE: u32 = 0x00000011;
-    const WDA_MONITOR: u32 = 0x00000001;
-
     let mut affinity: u32 = 0;
     let ok = unsafe { GetWindowDisplayAffinity(hwnd as _, &mut affinity) };
-    ok != 0 && (affinity == WDA_EXCLUDEFROMCAPTURE || affinity == WDA_MONITOR)
+    ok != 0 && affinity == WDA_EXCLUDEFROMCAPTURE
 }
 
 #[cfg(windows)]
 fn get_process_info(pid: u32) -> (String, String) {
-    use winapi::um::handleapi::CloseHandle;
     use winapi::um::processthreadsapi::OpenProcess;
-    use winapi::um::psapi::GetModuleFileNameExW;
-    use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+    use winapi::um::psapi::GetProcessImageFileNameW;
+    use winapi::um::handleapi::CloseHandle;
+    use winapi::um::winnt::PROCESS_QUERY_LIMITED_INFORMATION;
 
     unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid);
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
         if handle.is_null() {
-            return ("Unknown".to_string(), String::new());
+            return (format!("PID {pid}"), String::new());
         }
+
         let mut buf = vec![0u16; 1024];
-        let len = GetModuleFileNameExW(handle, std::ptr::null_mut(), buf.as_mut_ptr(), 1024);
+        let len = GetProcessImageFileNameW(handle, buf.as_mut_ptr(), 1024);
         CloseHandle(handle);
+
         if len == 0 {
-            return ("Unknown".to_string(), String::new());
+            return (format!("PID {pid}"), String::new());
         }
-        let full = String::from_utf16_lossy(&buf[..len as usize]);
-        let exe = full.split('\\').last().unwrap_or("Unknown").to_string();
-        (exe, full)
+
+        let full_path = String::from_utf16_lossy(&buf[..len as usize]);
+        let exe_name = std::path::Path::new(&full_path)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| format!("PID {pid}"));
+
+        (exe_name, full_path)
     }
 }
 
-/// Extract real HICON from window or executable and convert to Base64 PNG data URL
+/// Extracts the native icon from a window or executable, returning a Base64-encoded PNG data URL.
 #[cfg(windows)]
 fn extract_window_or_exe_icon(hwnd: winapi::shared::windef::HWND, exe_path: &str) -> Option<String> {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
+    use std::ptr::null_mut;
     use winapi::shared::windef::HICON;
     use winapi::um::winuser::{
-        DestroyIcon, GetClassLongPtrW, SendMessageTimeoutW,
-        GCLP_HICON, GCLP_HICONSM, ICON_BIG, ICON_SMALL2, SMTO_ABORTIFHUNG, WM_GETICON,
+        SendMessageTimeoutW, GetClassLongPtrW, DestroyIcon,
+        WM_GETICON, ICON_BIG, ICON_SMALL, ICON_SMALL2, GCLP_HICON, GCLP_HICONSM, SMTO_ABORTIFHUNG,
     };
     use winapi::um::shellapi::ExtractIconExW;
+    use std::os::windows::ffi::OsStrExt;
+    use std::ffi::OsStr;
 
     unsafe {
-        let mut hicon: HICON = std::ptr::null_mut();
+        let mut hicon: HICON = null_mut();
 
-        // 1. Try SendMessageTimeout with WM_GETICON
-        let mut result = 0usize;
-        let ok = SendMessageTimeoutW(
-            hwnd,
-            WM_GETICON,
-            ICON_BIG as _,
-            0,
-            SMTO_ABORTIFHUNG,
-            100,
-            &mut result,
-        );
-        if ok != 0 && result != 0 {
+        // 1. Try WM_GETICON (ICON_BIG) with 100ms timeout
+        let mut result: usize = 0;
+        if SendMessageTimeoutW(hwnd, WM_GETICON, ICON_BIG as _, 0, SMTO_ABORTIFHUNG, 100, &mut result as *mut _ as _) != 0 && result != 0 {
             hicon = result as HICON;
         }
 
+        // 2. Try WM_GETICON (ICON_SMALL)
         if hicon.is_null() {
-            let ok_sm = SendMessageTimeoutW(
-                hwnd,
-                WM_GETICON,
-                ICON_SMALL2 as _,
-                0,
-                SMTO_ABORTIFHUNG,
-                100,
-                &mut result,
-            );
-            if ok_sm != 0 && result != 0 {
+            if SendMessageTimeoutW(hwnd, WM_GETICON, ICON_SMALL as _, 0, SMTO_ABORTIFHUNG, 100, &mut result as *mut _ as _) != 0 && result != 0 {
                 hicon = result as HICON;
             }
         }
 
-        // 2. Try window class icon
+        // 3. Try WM_GETICON (ICON_SMALL2)
         if hicon.is_null() {
-            let cls_icon = GetClassLongPtrW(hwnd, GCLP_HICON);
-            if cls_icon != 0 {
-                hicon = cls_icon as HICON;
-            } else {
-                let cls_icon_sm = GetClassLongPtrW(hwnd, GCLP_HICONSM);
-                if cls_icon_sm != 0 {
-                    hicon = cls_icon_sm as HICON;
-                }
+            if SendMessageTimeoutW(hwnd, WM_GETICON, ICON_SMALL2 as _, 0, SMTO_ABORTIFHUNG, 100, &mut result as *mut _ as _) != 0 && result != 0 {
+                hicon = result as HICON;
             }
         }
 
-        // 3. Fallback: Extract from EXE file path
-        let mut should_destroy = false;
+        // 4. Try GetClassLongPtrW (GCLP_HICON)
+        if hicon.is_null() {
+            let class_icon = GetClassLongPtrW(hwnd, GCLP_HICON);
+            if class_icon != 0 {
+                hicon = class_icon as HICON;
+            }
+        }
+
+        // 5. Try GetClassLongPtrW (GCLP_HICONSM)
+        if hicon.is_null() {
+            let class_icon_sm = GetClassLongPtrW(hwnd, GCLP_HICONSM);
+            if class_icon_sm != 0 {
+                hicon = class_icon_sm as HICON;
+            }
+        }
+
+        // 6. Fallback: ExtractIconExW from the executable file path
+        let mut extracted_from_file = false;
         if hicon.is_null() && !exe_path.is_empty() {
             let wide_path: Vec<u16> = OsStr::new(exe_path).encode_wide().chain(std::iter::once(0)).collect();
-            let mut large_icon: HICON = std::ptr::null_mut();
-            let mut small_icon: HICON = std::ptr::null_mut();
+            let mut large_icon: HICON = null_mut();
+            let mut small_icon: HICON = null_mut();
             let count = ExtractIconExW(wide_path.as_ptr(), 0, &mut large_icon, &mut small_icon, 1);
             if count > 0 {
                 if !large_icon.is_null() {
                     hicon = large_icon;
-                    should_destroy = true;
+                    extracted_from_file = true;
                     if !small_icon.is_null() { DestroyIcon(small_icon); }
                 } else if !small_icon.is_null() {
                     hicon = small_icon;
-                    should_destroy = true;
+                    extracted_from_file = true;
                 }
             }
         }
@@ -318,87 +302,96 @@ fn extract_window_or_exe_icon(hwnd: winapi::shared::windef::HWND, exe_path: &str
             return None;
         }
 
-        let base64_png = hicon_to_base64_png(hicon);
-        if should_destroy {
+        let b64_str = hicon_to_base64_png(hicon);
+        if extracted_from_file {
             DestroyIcon(hicon);
         }
-        base64_png
+
+        b64_str
     }
 }
 
-/// Converts a Win32 HICON to a PNG base64 string
+/// Converts a Win32 HICON into Base64 PNG bytes
 #[cfg(windows)]
 unsafe fn hicon_to_base64_png(hicon: winapi::shared::windef::HICON) -> Option<String> {
-    use base64::Engine;
-    use winapi::shared::windef::HDC;
+    use winapi::um::winuser::{GetIconInfo, ICONINFO};
     use winapi::um::wingdi::{
         CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetObjectW,
         BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
     };
-    use winapi::um::winuser::{GetDC, GetIconInfo, ReleaseDC, ICONINFO};
+    use std::ptr::null_mut;
+    use base64::Engine;
 
     let mut icon_info: ICONINFO = std::mem::zeroed();
     if GetIconInfo(hicon, &mut icon_info) == 0 {
         return None;
     }
 
-    let hdc_screen = GetDC(std::ptr::null_mut());
-    let hdc_mem: HDC = CreateCompatibleDC(hdc_screen);
+    let hbm_color = icon_info.hbmColor;
+    let hbm_mask = icon_info.hbmMask;
 
-    let mut bmp: BITMAP = std::mem::zeroed();
-    GetObjectW(
-        icon_info.hbmColor as _,
-        std::mem::size_of::<BITMAP>() as i32,
-        &mut bmp as *mut _ as _,
-    );
-
-    let width = bmp.bmWidth as u32;
-    let height = bmp.bmHeight as u32;
-    if width == 0 || height == 0 || width > 512 || height > 512 {
-        if !icon_info.hbmColor.is_null() { DeleteObject(icon_info.hbmColor as _); }
-        if !icon_info.hbmMask.is_null() { DeleteObject(icon_info.hbmMask as _); }
-        DeleteDC(hdc_mem);
-        ReleaseDC(std::ptr::null_mut(), hdc_screen);
+    if hbm_color.is_null() {
+        if !hbm_mask.is_null() { DeleteObject(hbm_mask as _); }
         return None;
     }
 
-    let mut bi: BITMAPINFO = std::mem::zeroed();
-    bi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
-    bi.bmiHeader.biWidth = width as i32;
-    bi.bmiHeader.biHeight = -(height as i32); // Top-down DIB
-    bi.bmiHeader.biPlanes = 1;
-    bi.bmiHeader.biBitCount = 32;
-    bi.bmiHeader.biCompression = BI_RGB;
+    let mut bm: BITMAP = std::mem::zeroed();
+    if GetObjectW(hbm_color as _, std::mem::size_of::<BITMAP>() as _, &mut bm as *mut _ as _) == 0 {
+        DeleteObject(hbm_color as _);
+        if !hbm_mask.is_null() { DeleteObject(hbm_mask as _); }
+        return None;
+    }
+
+    let width = bm.bmWidth as u32;
+    let height = bm.bmHeight as u32;
+    if width == 0 || height == 0 || width > 256 || height > 256 {
+        DeleteObject(hbm_color as _);
+        if !hbm_mask.is_null() { DeleteObject(hbm_mask as _); }
+        return None;
+    }
+
+    let hdc = CreateCompatibleDC(null_mut());
+    if hdc.is_null() {
+        DeleteObject(hbm_color as _);
+        if !hbm_mask.is_null() { DeleteObject(hbm_mask as _); }
+        return None;
+    }
+
+    let mut bmi: BITMAPINFO = std::mem::zeroed();
+    bmi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+    bmi.bmiHeader.biWidth = width as i32;
+    bmi.bmiHeader.biHeight = -(height as i32); // Top-down
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
 
     let mut raw_pixels = vec![0u8; (width * height * 4) as usize];
     let lines = GetDIBits(
-        hdc_mem,
-        icon_info.hbmColor,
+        hdc,
+        hbm_color,
         0,
         height,
         raw_pixels.as_mut_ptr() as _,
-        &mut bi,
+        &mut bmi,
         DIB_RGB_COLORS,
     );
 
-    if !icon_info.hbmColor.is_null() { DeleteObject(icon_info.hbmColor as _); }
-    if !icon_info.hbmMask.is_null() { DeleteObject(icon_info.hbmMask as _); }
-    DeleteDC(hdc_mem);
-    ReleaseDC(std::ptr::null_mut(), hdc_screen);
+    DeleteDC(hdc);
+    DeleteObject(hbm_color as _);
+    if !hbm_mask.is_null() { DeleteObject(hbm_mask as _); }
 
     if lines == 0 {
         return None;
     }
 
-    // Convert BGRA to RGBA and check if alpha channel has non-zero values
+    // BGRA -> RGBA conversion
     let mut has_alpha = false;
     for chunk in raw_pixels.chunks_exact_mut(4) {
         let b = chunk[0];
         let r = chunk[2];
-        let a = chunk[3];
         chunk[0] = r;
         chunk[2] = b;
-        if a > 0 {
+        if chunk[3] != 0 {
             has_alpha = true;
         }
     }
@@ -423,7 +416,7 @@ unsafe fn hicon_to_base64_png(hicon: winapi::shared::windef::HICON) -> Option<St
 }
 
 #[cfg(not(windows))]
-pub fn enumerate_windows(_shielded_exes: &std::collections::HashSet<String>, _audio_muted_exes: &std::collections::HashSet<String>) -> Vec<WindowInfo> { vec![] }
+pub fn enumerate_windows(_shielded_exes: &std::collections::HashSet<String>) -> Vec<WindowInfo> { vec![] }
 
 #[cfg(not(windows))]
-pub fn auto_reapply_shields(_shielded_exes: &std::collections::HashSet<String>, _audio_muted_exes: &std::collections::HashSet<String>) {}
+pub fn auto_reapply_shields(_shielded_exes: &std::collections::HashSet<String>) {}

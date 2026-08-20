@@ -3,7 +3,6 @@
 
 mod window_manager;
 mod injector;
-mod audio_manager;
 mod config;
 
 use std::sync::Mutex;
@@ -63,11 +62,8 @@ fn tray_status_text(count: usize) -> String {
 }
 
 fn update_tray_status(state: &AppState) {
-    let (shielded, audio_muted) = {
-        let guard = state.config.lock().unwrap();
-        (guard.shielded_exes.clone(), guard.audio_muted_exes.clone())
-    };
-    let wins = window_manager::enumerate_windows(&shielded, &audio_muted);
+    let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();
+    let wins = window_manager::enumerate_windows(&shielded);
     let active_count = wins.iter().filter(|w| w.is_shielded).count();
     if let Ok(guard) = state.tray_status.lock() {
         if let Some(mi) = guard.as_ref() {
@@ -80,11 +76,8 @@ fn update_tray_status(state: &AppState) {
 
 #[tauri::command]
 fn get_windows(state: State<AppState>) -> Vec<WindowInfo> {
-    let (shielded, audio_muted) = {
-        let guard = state.config.lock().unwrap();
-        (guard.shielded_exes.clone(), guard.audio_muted_exes.clone())
-    };
-    let wins = window_manager::enumerate_windows(&shielded, &audio_muted);
+    let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();
+    let wins = window_manager::enumerate_windows(&shielded);
     let active_count = wins.iter().filter(|w| w.is_shielded).count();
     if let Ok(guard) = state.tray_status.lock() {
         if let Some(mi) = guard.as_ref() {
@@ -111,38 +104,15 @@ fn toggle_shield(exe_name: String, hwnd: usize, _pid: u32, enable: bool, state: 
 }
 
 #[tauri::command]
-fn toggle_audio_mute(exe_name: String, pid: u32, mute: bool, state: State<AppState>) -> Result<bool, String> {
-    audio_manager::set_process_audio_mute(&exe_name, pid, mute)?;
-    {
-        let mut config = state.config.lock().map_err(|e| e.to_string())?;
-        if mute {
-            config.audio_muted_exes.insert(exe_name);
-        } else {
-            config.audio_muted_exes.remove(&exe_name);
-        }
-        save_config(&config);
-    }
-    Ok(mute)
-}
-
-#[tauri::command]
 fn get_shielded_exes(state: State<AppState>) -> Vec<String> {
     state.config.lock().map(|c| c.shielded_exes.iter().cloned().collect()).unwrap_or_default()
 }
 
 #[tauri::command]
-fn get_audio_muted_exes(state: State<AppState>) -> Vec<String> {
-    state.config.lock().map(|c| c.audio_muted_exes.iter().cloned().collect()).unwrap_or_default()
-}
-
-#[tauri::command]
 fn reapply_shields(state: State<AppState>) -> Vec<String> {
-    let (shielded, audio_muted) = {
-        let guard = state.config.lock().unwrap();
-        (guard.shielded_exes.clone(), guard.audio_muted_exes.clone())
-    };
-    let res = window_manager::enumerate_windows(&shielded, &audio_muted).into_iter()
-        .filter(|w| shielded.contains(&w.exe_name))
+    let exes = state.config.lock().unwrap().shielded_exes.clone();
+    let res = window_manager::enumerate_windows(&exes).into_iter()
+        .filter(|w| exes.contains(&w.exe_name))
         .filter(|w| injector::set_window_affinity(w.hwnd, true).is_ok())
         .map(|w| w.exe_name).collect();
     update_tray_status(&state);
@@ -210,8 +180,8 @@ fn main() {
     tauri::Builder::default()
         .manage(AppState { config: Mutex::new(load_config()), tray_status: Mutex::new(None) })
         .invoke_handler(tauri::generate_handler![
-            get_windows, toggle_shield, toggle_audio_mute, get_shielded_exes, get_audio_muted_exes,
-            reapply_shields, check_admin, hide_to_tray, toggle_self_shield, is_self_shielded
+            get_windows, toggle_shield, get_shielded_exes, reapply_shields,
+            check_admin, hide_to_tray, toggle_self_shield, is_self_shielded
         ])
         .setup(|app| {
             // ── Show main window ─────────────────────────────────────────
@@ -226,9 +196,6 @@ fn main() {
             let sep2   = PredefinedMenuItem::separator(app)?;
             let quit   = MenuItem::with_id(app, "quit",   "Quit",                  true, None::<&str>)?;
             let menu   = Menu::with_items(app, &[&show, &sep1, &status, &sep2, &quit])?;
-
-            // Unmute any previously muted audio sessions
-            audio_manager::unmute_all_sessions();
 
             // Store status item handle so toggle_shield can update it
             if let Some(state) = app.try_state::<AppState>() {
@@ -285,12 +252,9 @@ fn main() {
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(2000));
                     if let Some(state) = app_handle.try_state::<AppState>() {
-                        let (shielded, audio_muted) = {
-                            let guard = state.config.lock().unwrap();
-                            (guard.shielded_exes.clone(), guard.audio_muted_exes.clone())
-                        };
-                        if !shielded.is_empty() || !audio_muted.is_empty() {
-                            window_manager::auto_reapply_shields(&shielded, &audio_muted);
+                        let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();
+                        if !shielded.is_empty() {
+                            window_manager::auto_reapply_shields(&shielded);
                         }
                         update_tray_status(&state);
                     }
