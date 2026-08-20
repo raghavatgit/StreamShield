@@ -16,6 +16,7 @@ dirs = "5"
 winapi = { version = "0.3", features = [
   "winuser", "processthreadsapi", "psapi",
   "handleapi", "errhandlingapi", "winnt",
-  "shellapi", "shlobj", "securitybaseapi",
-  "winerror", "minwindef",
+  "shellapi", "securitybaseapi",
+  "memoryapi", "libloaderapi", "synchapi",
+  "winerror", "minwindef", "basetsd",
 ] }
