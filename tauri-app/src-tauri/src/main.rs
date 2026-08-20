@@ -51,7 +51,7 @@ fn relaunch_as_admin() {
     unsafe { ShellExecuteW(std::ptr::null_mut(), verb_w.as_ptr(), exe_w.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOW as i32); }
 }
 
-// ── Tray status helper ────────────────────────────────────────────────────────
+// ── Tray status helpers ───────────────────────────────────────────────────────
 
 fn tray_status_text(count: usize) -> String {
     if count == 0 {
@@ -61,30 +61,42 @@ fn tray_status_text(count: usize) -> String {
     }
 }
 
+fn update_tray_status(state: &AppState) {
+    let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();
+    let wins = window_manager::enumerate_windows(&shielded);
+    let active_count = wins.iter().filter(|w| w.is_shielded).count();
+    if let Ok(guard) = state.tray_status.lock() {
+        if let Some(mi) = guard.as_ref() {
+            let _ = mi.set_text(tray_status_text(active_count));
+        }
+    }
+}
+
 // ── Tauri commands ───────────────────────────────────────────────────────────
 
 #[tauri::command]
 fn get_windows(state: State<AppState>) -> Vec<WindowInfo> {
     let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();
-    window_manager::enumerate_windows(&shielded)
+    let wins = window_manager::enumerate_windows(&shielded);
+    let active_count = wins.iter().filter(|w| w.is_shielded).count();
+    if let Ok(guard) = state.tray_status.lock() {
+        if let Some(mi) = guard.as_ref() {
+            let _ = mi.set_text(tray_status_text(active_count));
+        }
+    }
+    wins
 }
 
 #[tauri::command]
 fn toggle_shield(exe_name: String, hwnd: usize, enable: bool, state: State<AppState>) -> Result<bool, String> {
     injector::set_window_affinity(hwnd, enable)?;
-    let count = {
+    {
         let mut config = state.config.lock().map_err(|e| e.to_string())?;
         if enable { config.shielded_exes.insert(exe_name); }
         else       { config.shielded_exes.remove(&exe_name); }
         save_config(&config);
-        config.shielded_exes.len()
-    };
-    // Update tray status label directly via stored handle
-    if let Ok(guard) = state.tray_status.lock() {
-        if let Some(mi) = guard.as_ref() {
-            let _ = mi.set_text(tray_status_text(count));
-        }
     }
+    update_tray_status(&state);
     Ok(true)
 }
 
@@ -96,10 +108,12 @@ fn get_shielded_exes(state: State<AppState>) -> Vec<String> {
 #[tauri::command]
 fn reapply_shields(state: State<AppState>) -> Vec<String> {
     let exes = state.config.lock().unwrap().shielded_exes.clone();
-    window_manager::enumerate_windows(&exes).into_iter()
+    let res = window_manager::enumerate_windows(&exes).into_iter()
         .filter(|w| exes.contains(&w.exe_name))
         .filter(|w| injector::set_window_affinity(w.hwnd, true).is_ok())
-        .map(|w| w.exe_name).collect()
+        .map(|w| w.exe_name).collect();
+    update_tray_status(&state);
+    res
 }
 
 #[tauri::command]
@@ -185,6 +199,7 @@ fn main() {
                 if let Ok(mut guard) = state.tray_status.lock() {
                     *guard = Some(status);
                 }
+                update_tray_status(&state);
             }
 
             // ── Tray icon ────────────────────────────────────────────────
@@ -228,13 +243,17 @@ fn main() {
                 })
                 .build(app)?;
 
-            // ── Auto-Shield Background Watchdog Daemon ───────────────────
+            // ── Auto-Shield & Live Tray Update Background Watchdog Daemon ──
+            let app_handle = app.handle().clone();
             std::thread::spawn(move || {
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(2000));
-                    let config = load_config();
-                    if !config.shielded_exes.is_empty() {
-                        window_manager::auto_reapply_shields(&config.shielded_exes);
+                    if let Some(state) = app_handle.try_state::<AppState>() {
+                        let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();
+                        if !shielded.is_empty() {
+                            window_manager::auto_reapply_shields(&shielded);
+                        }
+                        update_tray_status(&state);
                     }
                 }
             });
