@@ -1,0 +1,6 @@
+workspace]
+members = [
+  "tauri-app/src-tauri",
+  "shield_dll",
+]
+resolver = "2"

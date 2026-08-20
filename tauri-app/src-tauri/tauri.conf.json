@@ -1,0 +1,40 @@
+{
+  "productName": "StreamShield",
+  "version": "0.1.0",
+  "identifier": "com.streamshield.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "StreamShield",
+        "width": 480,
+        "height": 700,
+        "resizable": true,
+        "minWidth": 400,
+        "minHeight": 500,
+        "decorations": true,
+        "transparent": false
+      }
+    ],
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true
+    },
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.png"]
+  },
+  "plugins": {
+    "store": {}
+  }
+}

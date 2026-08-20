@@ -1,0 +1,11 @@
+package]
+name = "shield_dll"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "shield_dll"
+crate-type = ["cdylib"]
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["winuser", "errhandlingapi"] }
