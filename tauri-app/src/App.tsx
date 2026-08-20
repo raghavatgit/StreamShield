@@ -62,14 +62,13 @@ export default function App() {
       // GROUND TRUTH: Populate active shield state directly from Windows OS query
       const activeShielded = new Set<string>();
       for (const w of wins) {
-        if (w.is_shielded || savedShielded.includes(w.exe_name)) {
+        if (w.is_shielded) {
           activeShielded.add(w.exe_name);
         }
       }
       setShieldedExes(activeShielded);
     } catch (e) {
       console.error(e);
-      showToast(String(e).replace("Error: ", ""), "error");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -78,6 +77,14 @@ export default function App() {
 
   useEffect(() => {
     loadWindows();
+    const interval = setInterval(() => {
+      loadWindows();
+    }, 3500);
+    window.addEventListener("focus", loadWindows);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", loadWindows);
+    };
   }, [loadWindows]);
 
   const handleRefresh = async () => {

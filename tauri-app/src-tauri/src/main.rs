@@ -64,7 +64,10 @@ fn tray_status_text(count: usize) -> String {
 // ── Tauri commands ───────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn get_windows() -> Vec<WindowInfo> { window_manager::enumerate_windows() }
+fn get_windows(state: State<AppState>) -> Vec<WindowInfo> {
+    let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();
+    window_manager::enumerate_windows(&shielded)
+}
 
 #[tauri::command]
 fn toggle_shield(exe_name: String, hwnd: usize, enable: bool, state: State<AppState>) -> Result<bool, String> {
@@ -93,7 +96,7 @@ fn get_shielded_exes(state: State<AppState>) -> Vec<String> {
 #[tauri::command]
 fn reapply_shields(state: State<AppState>) -> Vec<String> {
     let exes = state.config.lock().unwrap().shielded_exes.clone();
-    window_manager::enumerate_windows().into_iter()
+    window_manager::enumerate_windows(&exes).into_iter()
         .filter(|w| exes.contains(&w.exe_name))
         .filter(|w| injector::set_window_affinity(w.hwnd, true).is_ok())
         .map(|w| w.exe_name).collect()
@@ -224,6 +227,17 @@ fn main() {
                     _ => {}
                 })
                 .build(app)?;
+
+            // ── Auto-Shield Background Watchdog Daemon ───────────────────
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(2000));
+                    let config = load_config();
+                    if !config.shielded_exes.is_empty() {
+                        window_manager::auto_reapply_shields(&config.shielded_exes);
+                    }
+                }
+            });
 
             Ok(())
         })

@@ -11,7 +11,7 @@ pub struct WindowInfo {
 }
 
 #[cfg(windows)]
-pub fn enumerate_windows() -> Vec<WindowInfo> {
+pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>) -> Vec<WindowInfo> {
     use std::collections::{HashMap, HashSet};
     use winapi::shared::minwindef::{BOOL, LPARAM};
     use winapi::shared::windef::HWND;
@@ -116,7 +116,16 @@ pub fn enumerate_windows() -> Vec<WindowInfo> {
         seen_exe.insert(exe_lower.clone());
 
         // Ground-truth live OS display affinity check
-        let is_shielded = query_live_affinity(hwnd as usize);
+        let mut is_shielded = query_live_affinity(hwnd as usize);
+
+        // AUTO-REAPPLY: If this executable was previously shielded by user config,
+        // but this window instance isn't shielded yet (e.g. freshly launched app),
+        // automatically inject and reapply the shield immediately!
+        let should_be_shielded = shielded_exes.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
+        if should_be_shielded && !is_shielded {
+            let _ = crate::injector::set_window_affinity(hwnd as usize, true);
+            is_shielded = query_live_affinity(hwnd as usize);
+        }
 
         // Fetch icon (cached per exe to avoid redundant GDI calls)
         let icon_base64 = icon_cache.entry(exe_lower).or_insert_with(|| {
@@ -140,6 +149,40 @@ pub fn enumerate_windows() -> Vec<WindowInfo> {
     });
 
     results
+}
+
+/// Helper for background watchdog to auto-shield freshly opened windows without overhead
+#[cfg(windows)]
+pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>) {
+    if shielded_exes.is_empty() {
+        return;
+    }
+    use winapi::shared::minwindef::{BOOL, LPARAM};
+    use winapi::shared::windef::HWND;
+    use winapi::um::winuser::{EnumWindows, GetWindowThreadProcessId, IsWindowVisible};
+
+    unsafe extern "system" fn watch_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        if IsWindowVisible(hwnd) == 0 { return 1; }
+        let (shielded_set, _) = &*(lparam as *const (std::collections::HashSet<String>, ()));
+
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        if pid == 0 { return 1; }
+
+        let (exe_name, _) = get_process_info(pid);
+        let exe_lower = exe_name.to_lowercase();
+
+        let should_shield = shielded_set.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
+        if should_shield && !query_live_affinity(hwnd as usize) {
+            let _ = crate::injector::set_window_affinity(hwnd as usize, true);
+        }
+        1
+    }
+
+    let payload = (shielded_exes.clone(), ());
+    unsafe {
+        EnumWindows(Some(watch_proc), &payload as *const _ as LPARAM);
+    }
 }
 
 /// Query the true, ground-truth Display Affinity from Windows OS
@@ -364,4 +407,7 @@ unsafe fn hicon_to_base64_png(hicon: winapi::shared::windef::HICON) -> Option<St
 }
 
 #[cfg(not(windows))]
-pub fn enumerate_windows() -> Vec<WindowInfo> { vec![] }
+pub fn enumerate_windows(_shielded_exes: &std::collections::HashSet<String>) -> Vec<WindowInfo> { vec![] }
+
+#[cfg(not(windows))]
+pub fn auto_reapply_shields(_shielded_exes: &std::collections::HashSet<String>) {}
