@@ -130,10 +130,10 @@ pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>, audi
 
         // Live Audio Mute Check and Auto-Reapply
         let should_be_audio_muted = audio_muted_exes.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
-        let mut is_audio_muted = crate::audio_manager::get_process_audio_mute(pid);
+        let mut is_audio_muted = crate::audio_manager::get_process_audio_mute(&exe_name, pid);
         if should_be_audio_muted && !is_audio_muted {
-            let _ = crate::audio_manager::set_process_audio_mute(pid, true);
-            is_audio_muted = crate::audio_manager::get_process_audio_mute(pid);
+            let _ = crate::audio_manager::set_process_audio_mute(&exe_name, pid, true);
+            is_audio_muted = crate::audio_manager::get_process_audio_mute(&exe_name, pid);
         }
 
         // Fetch icon (cached per exe to avoid redundant GDI calls)
@@ -188,8 +188,8 @@ pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>, a
         }
 
         let should_audio_mute = audio_set.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
-        if should_audio_mute && !crate::audio_manager::get_process_audio_mute(pid) {
-            let _ = crate::audio_manager::set_process_audio_mute(pid, true);
+        if should_audio_mute && !crate::audio_manager::get_process_audio_mute(&exe_name, pid) {
+            let _ = crate::audio_manager::set_process_audio_mute(&exe_name, pid, true);
         }
 
         1

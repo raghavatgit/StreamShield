@@ -1,5 +1,5 @@
 #[cfg(windows)]
-pub fn set_process_audio_mute(target_pid: u32, mute: bool) -> Result<(), String> {
+pub fn set_process_audio_mute(exe_name: &str, target_pid: u32, mute: bool) -> Result<(), String> {
     use std::ptr;
     use winapi::shared::guiddef::GUID;
     use winapi::shared::minwindef::BOOL;
@@ -33,6 +33,13 @@ pub fn set_process_audio_mute(target_pid: u32, mute: bool) -> Result<(), String>
         parent: IUnknownVtbl,
         enum_audio_endpoints: unsafe extern "system" fn(*mut IUnknown, i32, u32, *mut *mut IUnknown) -> HRESULT,
         get_default_audio_endpoint: unsafe extern "system" fn(*mut IUnknown, i32, i32, *mut *mut IUnknown) -> HRESULT,
+    }
+
+    #[repr(C)]
+    struct IMMDeviceCollectionVtbl {
+        parent: IUnknownVtbl,
+        get_count: unsafe extern "system" fn(*mut IUnknown, *mut u32) -> HRESULT,
+        item: unsafe extern "system" fn(*mut IUnknown, u32, *mut *mut IUnknown) -> HRESULT,
     }
 
     #[repr(C)]
@@ -82,6 +89,9 @@ pub fn set_process_audio_mute(target_pid: u32, mute: bool) -> Result<(), String>
         get_mute: unsafe extern "system" fn(*mut IUnknown, *mut BOOL) -> HRESULT,
     }
 
+    let mute_val: BOOL = if mute { 1 } else { 0 };
+    let clean_exe = exe_name.to_lowercase();
+
     unsafe {
         CoInitializeEx(ptr::null_mut(), COINITBASE_MULTITHREADED);
 
@@ -99,82 +109,98 @@ pub fn set_process_audio_mute(target_pid: u32, mute: bool) -> Result<(), String>
         }
 
         let enum_vtbl = &*((*device_enumerator).lpVtbl as *const IMMDeviceEnumeratorVtbl);
-        let mut default_device: *mut IUnknown = ptr::null_mut();
-        // eRender = 0, eMultimedia = 1
-        let hr = (enum_vtbl.get_default_audio_endpoint)(device_enumerator, 0, 1, &mut default_device);
+        let mut device_collection: *mut IUnknown = ptr::null_mut();
+        // eRender = 0, DEVICE_STATE_ACTIVE = 1
+        let hr = (enum_vtbl.enum_audio_endpoints)(device_enumerator, 0, 1, &mut device_collection);
         ((*device_enumerator).lpVtbl.as_ref().unwrap().Release)(device_enumerator);
 
-        if hr != S_OK || default_device.is_null() {
+        if hr != S_OK || device_collection.is_null() {
             CoUninitialize();
-            return Err("Failed to get default audio endpoint".to_string());
+            return Err("Failed to enumerate active audio endpoints".to_string());
         }
 
-        let dev_vtbl = &*((*default_device).lpVtbl as *const IMMDeviceVtbl);
-        let mut session_manager: *mut IUnknown = ptr::null_mut();
-        let hr = (dev_vtbl.activate)(
-            default_device,
-            &IID_IAUDIO_SESSION_MANAGER2,
-            CLSCTX_ALL,
-            ptr::null_mut(),
-            &mut session_manager,
-        );
-        ((*default_device).lpVtbl.as_ref().unwrap().Release)(default_device);
+        let col_vtbl = &*((*device_collection).lpVtbl as *const IMMDeviceCollectionVtbl);
+        let mut dev_count: u32 = 0;
+        (col_vtbl.get_count)(device_collection, &mut dev_count);
 
-        if hr != S_OK || session_manager.is_null() {
-            CoUninitialize();
-            return Err("Failed to activate IAudioSessionManager2".to_string());
-        }
-
-        let mgr_vtbl = &*((*session_manager).lpVtbl as *const IAudioSessionManager2Vtbl);
-        let mut session_enum: *mut IUnknown = ptr::null_mut();
-        let hr = (mgr_vtbl.get_session_enumerator)(session_manager, &mut session_enum);
-        ((*session_manager).lpVtbl.as_ref().unwrap().Release)(session_manager);
-
-        if hr != S_OK || session_enum.is_null() {
-            CoUninitialize();
-            return Err("Failed to get session enumerator".to_string());
-        }
-
-        let enum_session_vtbl = &*((*session_enum).lpVtbl as *const IAudioSessionEnumeratorVtbl);
-        let mut session_count: i32 = 0;
-        (enum_session_vtbl.get_count)(session_enum, &mut session_count);
-
-        let mute_val: BOOL = if mute { 1 } else { 0 };
-
-        for i in 0..session_count {
-            let mut session_control: *mut IUnknown = ptr::null_mut();
-            if (enum_session_vtbl.get_session)(session_enum, i, &mut session_control) != S_OK || session_control.is_null() {
+        for d in 0..dev_count {
+            let mut device: *mut IUnknown = ptr::null_mut();
+            if (col_vtbl.item)(device_collection, d, &mut device) != S_OK || device.is_null() {
                 continue;
             }
 
-            let mut session_control2: *mut IUnknown = ptr::null_mut();
-            let hr = ((*session_control).lpVtbl.as_ref().unwrap().QueryInterface)(
-                session_control,
-                &IID_IAUDIO_SESSION_CONTROL2,
-                &mut session_control2 as *mut _ as *mut _,
+            let dev_vtbl = &*((*device).lpVtbl as *const IMMDeviceVtbl);
+            let mut session_manager: *mut IUnknown = ptr::null_mut();
+            let hr = (dev_vtbl.activate)(
+                device,
+                &IID_IAUDIO_SESSION_MANAGER2,
+                CLSCTX_ALL,
+                ptr::null_mut(),
+                &mut session_manager,
             );
-            if hr == S_OK && !session_control2.is_null() {
-                let ctrl2_vtbl = &*((*session_control2).lpVtbl as *const IAudioSessionControl2Vtbl);
-                let mut pid: u32 = 0;
-                if (ctrl2_vtbl.get_process_id)(session_control2, &mut pid) == S_OK && pid == target_pid {
-                    let mut simple_volume: *mut IUnknown = ptr::null_mut();
-                    let hr = ((*session_control).lpVtbl.as_ref().unwrap().QueryInterface)(
-                        session_control,
-                        &IID_ISIMPLE_AUDIO_VOLUME,
-                        &mut simple_volume as *mut _ as *mut _,
-                    );
-                    if hr == S_OK && !simple_volume.is_null() {
-                        let vol_vtbl = &*((*simple_volume).lpVtbl as *const ISimpleAudioVolumeVtbl);
-                        (vol_vtbl.set_mute)(simple_volume, mute_val, ptr::null());
-                        ((*simple_volume).lpVtbl.as_ref().unwrap().Release)(simple_volume);
-                    }
-                }
-                ((*session_control2).lpVtbl.as_ref().unwrap().Release)(session_control2);
+            ((*device).lpVtbl.as_ref().unwrap().Release)(device);
+
+            if hr != S_OK || session_manager.is_null() {
+                continue;
             }
-            ((*session_control).lpVtbl.as_ref().unwrap().Release)(session_control);
+
+            let mgr_vtbl = &*((*session_manager).lpVtbl as *const IAudioSessionManager2Vtbl);
+            let mut session_enum: *mut IUnknown = ptr::null_mut();
+            let hr = (mgr_vtbl.get_session_enumerator)(session_manager, &mut session_enum);
+            ((*session_manager).lpVtbl.as_ref().unwrap().Release)(session_manager);
+
+            if hr != S_OK || session_enum.is_null() {
+                continue;
+            }
+
+            let enum_session_vtbl = &*((*session_enum).lpVtbl as *const IAudioSessionEnumeratorVtbl);
+            let mut session_count: i32 = 0;
+            (enum_session_vtbl.get_count)(session_enum, &mut session_count);
+
+            for i in 0..session_count {
+                let mut session_control: *mut IUnknown = ptr::null_mut();
+                if (enum_session_vtbl.get_session)(session_enum, i, &mut session_control) != S_OK || session_control.is_null() {
+                    continue;
+                }
+
+                let mut session_control2: *mut IUnknown = ptr::null_mut();
+                let hr = ((*session_control).lpVtbl.as_ref().unwrap().QueryInterface)(
+                    session_control,
+                    &IID_IAUDIO_SESSION_CONTROL2,
+                    &mut session_control2 as *mut _ as *mut _,
+                );
+                if hr == S_OK && !session_control2.is_null() {
+                    let ctrl2_vtbl = &*((*session_control2).lpVtbl as *const IAudioSessionControl2Vtbl);
+                    let mut pid: u32 = 0;
+                    if (ctrl2_vtbl.get_process_id)(session_control2, &mut pid) == S_OK && pid != 0 {
+                        let is_match = (target_pid != 0 && pid == target_pid) || {
+                            let session_exe = get_exe_name_from_pid(pid);
+                            !session_exe.is_empty() && session_exe.to_lowercase() == clean_exe
+                        };
+
+                        if is_match {
+                            let mut simple_volume: *mut IUnknown = ptr::null_mut();
+                            let hr = ((*session_control).lpVtbl.as_ref().unwrap().QueryInterface)(
+                                session_control,
+                                &IID_ISIMPLE_AUDIO_VOLUME,
+                                &mut simple_volume as *mut _ as *mut _,
+                            );
+                            if hr == S_OK && !simple_volume.is_null() {
+                                let vol_vtbl = &*((*simple_volume).lpVtbl as *const ISimpleAudioVolumeVtbl);
+                                (vol_vtbl.set_mute)(simple_volume, mute_val, ptr::null());
+                                ((*simple_volume).lpVtbl.as_ref().unwrap().Release)(simple_volume);
+                            }
+                        }
+                    }
+                    ((*session_control2).lpVtbl.as_ref().unwrap().Release)(session_control2);
+                }
+                ((*session_control).lpVtbl.as_ref().unwrap().Release)(session_control);
+            }
+
+            ((*session_enum).lpVtbl.as_ref().unwrap().Release)(session_enum);
         }
 
-        ((*session_enum).lpVtbl.as_ref().unwrap().Release)(session_enum);
+        ((*device_collection).lpVtbl.as_ref().unwrap().Release)(device_collection);
         CoUninitialize();
     }
 
@@ -182,7 +208,7 @@ pub fn set_process_audio_mute(target_pid: u32, mute: bool) -> Result<(), String>
 }
 
 #[cfg(windows)]
-pub fn get_process_audio_mute(target_pid: u32) -> bool {
+pub fn get_process_audio_mute(exe_name: &str, target_pid: u32) -> bool {
     use std::ptr;
     use winapi::shared::guiddef::GUID;
     use winapi::shared::minwindef::BOOL;
@@ -216,6 +242,13 @@ pub fn get_process_audio_mute(target_pid: u32) -> bool {
         parent: IUnknownVtbl,
         enum_audio_endpoints: unsafe extern "system" fn(*mut IUnknown, i32, u32, *mut *mut IUnknown) -> winapi::shared::winerror::HRESULT,
         get_default_audio_endpoint: unsafe extern "system" fn(*mut IUnknown, i32, i32, *mut *mut IUnknown) -> winapi::shared::winerror::HRESULT,
+    }
+
+    #[repr(C)]
+    struct IMMDeviceCollectionVtbl {
+        parent: IUnknownVtbl,
+        get_count: unsafe extern "system" fn(*mut IUnknown, *mut u32) -> winapi::shared::winerror::HRESULT,
+        item: unsafe extern "system" fn(*mut IUnknown, u32, *mut *mut IUnknown) -> winapi::shared::winerror::HRESULT,
     }
 
     #[repr(C)]
@@ -266,6 +299,7 @@ pub fn get_process_audio_mute(target_pid: u32) -> bool {
     }
 
     let mut is_muted = false;
+    let clean_exe = exe_name.to_lowercase();
 
     unsafe {
         CoInitializeEx(ptr::null_mut(), COINITBASE_MULTITHREADED);
@@ -279,83 +313,135 @@ pub fn get_process_audio_mute(target_pid: u32) -> bool {
         }
 
         let enum_vtbl = &*((*device_enumerator).lpVtbl as *const IMMDeviceEnumeratorVtbl);
-        let mut default_device: *mut IUnknown = ptr::null_mut();
-        if (enum_vtbl.get_default_audio_endpoint)(device_enumerator, 0, 1, &mut default_device) != S_OK || default_device.is_null() {
+        let mut device_collection: *mut IUnknown = ptr::null_mut();
+        if (enum_vtbl.enum_audio_endpoints)(device_enumerator, 0, 1, &mut device_collection) != S_OK || device_collection.is_null() {
             ((*device_enumerator).lpVtbl.as_ref().unwrap().Release)(device_enumerator);
             CoUninitialize();
             return false;
         }
         ((*device_enumerator).lpVtbl.as_ref().unwrap().Release)(device_enumerator);
 
-        let dev_vtbl = &*((*default_device).lpVtbl as *const IMMDeviceVtbl);
-        let mut session_manager: *mut IUnknown = ptr::null_mut();
-        if (dev_vtbl.activate)(default_device, &IID_IAUDIO_SESSION_MANAGER2, CLSCTX_ALL, ptr::null_mut(), &mut session_manager) != S_OK
-            || session_manager.is_null()
-        {
-            ((*default_device).lpVtbl.as_ref().unwrap().Release)(default_device);
-            CoUninitialize();
-            return false;
-        }
-        ((*default_device).lpVtbl.as_ref().unwrap().Release)(default_device);
+        let col_vtbl = &*((*device_collection).lpVtbl as *const IMMDeviceCollectionVtbl);
+        let mut dev_count: u32 = 0;
+        (col_vtbl.get_count)(device_collection, &mut dev_count);
 
-        let mgr_vtbl = &*((*session_manager).lpVtbl as *const IAudioSessionManager2Vtbl);
-        let mut session_enum: *mut IUnknown = ptr::null_mut();
-        if (mgr_vtbl.get_session_enumerator)(session_manager, &mut session_enum) != S_OK || session_enum.is_null() {
-            ((*session_manager).lpVtbl.as_ref().unwrap().Release)(session_manager);
-            CoUninitialize();
-            return false;
-        }
-        ((*session_manager).lpVtbl.as_ref().unwrap().Release)(session_manager);
-
-        let enum_session_vtbl = &*((*session_enum).lpVtbl as *const IAudioSessionEnumeratorVtbl);
-        let mut session_count: i32 = 0;
-        (enum_session_vtbl.get_count)(session_enum, &mut session_count);
-
-        for i in 0..session_count {
-            let mut session_control: *mut IUnknown = ptr::null_mut();
-            if (enum_session_vtbl.get_session)(session_enum, i, &mut session_control) != S_OK || session_control.is_null() {
+        'outer: for d in 0..dev_count {
+            let mut device: *mut IUnknown = ptr::null_mut();
+            if (col_vtbl.item)(device_collection, d, &mut device) != S_OK || device.is_null() {
                 continue;
             }
 
-            let mut session_control2: *mut IUnknown = ptr::null_mut();
-            let hr = ((*session_control).lpVtbl.as_ref().unwrap().QueryInterface)(
-                session_control,
-                &IID_IAUDIO_SESSION_CONTROL2,
-                &mut session_control2 as *mut _ as *mut _,
-            );
-            if hr == S_OK && !session_control2.is_null() {
-                let ctrl2_vtbl = &*((*session_control2).lpVtbl as *const IAudioSessionControl2Vtbl);
-                let mut pid: u32 = 0;
-                if (ctrl2_vtbl.get_process_id)(session_control2, &mut pid) == S_OK && pid == target_pid {
-                    let mut simple_volume: *mut IUnknown = ptr::null_mut();
-                    let hr = ((*session_control).lpVtbl.as_ref().unwrap().QueryInterface)(
-                        session_control,
-                        &IID_ISIMPLE_AUDIO_VOLUME,
-                        &mut simple_volume as *mut _ as *mut _,
-                    );
-                    if hr == S_OK && !simple_volume.is_null() {
-                        let vol_vtbl = &*((*simple_volume).lpVtbl as *const ISimpleAudioVolumeVtbl);
-                        let mut mute_val: BOOL = 0;
-                        if (vol_vtbl.get_mute)(simple_volume, &mut mute_val) == S_OK {
-                            is_muted = mute_val != 0;
-                        }
-                        ((*simple_volume).lpVtbl.as_ref().unwrap().Release)(simple_volume);
-                    }
-                }
-                ((*session_control2).lpVtbl.as_ref().unwrap().Release)(session_control2);
+            let dev_vtbl = &*((*device).lpVtbl as *const IMMDeviceVtbl);
+            let mut session_manager: *mut IUnknown = ptr::null_mut();
+            let hr = (dev_vtbl.activate)(device, &IID_IAUDIO_SESSION_MANAGER2, CLSCTX_ALL, ptr::null_mut(), &mut session_manager);
+            ((*device).lpVtbl.as_ref().unwrap().Release)(device);
+
+            if hr != S_OK || session_manager.is_null() {
+                continue;
             }
-            ((*session_control).lpVtbl.as_ref().unwrap().Release)(session_control);
+
+            let mgr_vtbl = &*((*session_manager).lpVtbl as *const IAudioSessionManager2Vtbl);
+            let mut session_enum: *mut IUnknown = ptr::null_mut();
+            if (mgr_vtbl.get_session_enumerator)(session_manager, &mut session_enum) != S_OK || session_enum.is_null() {
+                ((*session_manager).lpVtbl.as_ref().unwrap().Release)(session_manager);
+                continue;
+            }
+            ((*session_manager).lpVtbl.as_ref().unwrap().Release)(session_manager);
+
+            let enum_session_vtbl = &*((*session_enum).lpVtbl as *const IAudioSessionEnumeratorVtbl);
+            let mut session_count: i32 = 0;
+            (enum_session_vtbl.get_count)(session_enum, &mut session_count);
+
+            for i in 0..session_count {
+                let mut session_control: *mut IUnknown = ptr::null_mut();
+                if (enum_session_vtbl.get_session)(session_enum, i, &mut session_control) != S_OK || session_control.is_null() {
+                    continue;
+                }
+
+                let mut session_control2: *mut IUnknown = ptr::null_mut();
+                let hr = ((*session_control).lpVtbl.as_ref().unwrap().QueryInterface)(
+                    session_control,
+                    &IID_IAUDIO_SESSION_CONTROL2,
+                    &mut session_control2 as *mut _ as *mut _,
+                );
+                if hr == S_OK && !session_control2.is_null() {
+                    let ctrl2_vtbl = &*((*session_control2).lpVtbl as *const IAudioSessionControl2Vtbl);
+                    let mut pid: u32 = 0;
+                    if (ctrl2_vtbl.get_process_id)(session_control2, &mut pid) == S_OK && pid != 0 {
+                        let is_match = (target_pid != 0 && pid == target_pid) || {
+                            let session_exe = get_exe_name_from_pid(pid);
+                            !session_exe.is_empty() && session_exe.to_lowercase() == clean_exe
+                        };
+
+                        if is_match {
+                            let mut simple_volume: *mut IUnknown = ptr::null_mut();
+                            let hr = ((*session_control).lpVtbl.as_ref().unwrap().QueryInterface)(
+                                session_control,
+                                &IID_ISIMPLE_AUDIO_VOLUME,
+                                &mut simple_volume as *mut _ as *mut _,
+                            );
+                            if hr == S_OK && !simple_volume.is_null() {
+                                let vol_vtbl = &*((*simple_volume).lpVtbl as *const ISimpleAudioVolumeVtbl);
+                                let mut mute_val: BOOL = 0;
+                                if (vol_vtbl.get_mute)(simple_volume, &mut mute_val) == S_OK {
+                                    if mute_val != 0 {
+                                        is_muted = true;
+                                        ((*simple_volume).lpVtbl.as_ref().unwrap().Release)(simple_volume);
+                                        ((*session_control2).lpVtbl.as_ref().unwrap().Release)(session_control2);
+                                        ((*session_control).lpVtbl.as_ref().unwrap().Release)(session_control);
+                                        ((*session_enum).lpVtbl.as_ref().unwrap().Release)(session_enum);
+                                        break 'outer;
+                                    }
+                                }
+                                ((*simple_volume).lpVtbl.as_ref().unwrap().Release)(simple_volume);
+                            }
+                        }
+                    }
+                    ((*session_control2).lpVtbl.as_ref().unwrap().Release)(session_control2);
+                }
+                ((*session_control).lpVtbl.as_ref().unwrap().Release)(session_control);
+            }
+
+            ((*session_enum).lpVtbl.as_ref().unwrap().Release)(session_enum);
         }
 
-        ((*session_enum).lpVtbl.as_ref().unwrap().Release)(session_enum);
+        ((*device_collection).lpVtbl.as_ref().unwrap().Release)(device_collection);
         CoUninitialize();
     }
 
     is_muted
 }
 
-#[cfg(not(windows))]
-pub fn set_process_audio_mute(_target_pid: u32, _mute: bool) -> Result<(), String> { Ok(()) }
+#[cfg(windows)]
+fn get_exe_name_from_pid(pid: u32) -> String {
+    use winapi::um::processthreadsapi::OpenProcess;
+    use winapi::um::psapi::GetProcessImageFileNameW;
+    use winapi::um::handleapi::CloseHandle;
+    use winapi::um::winnt::PROCESS_QUERY_LIMITED_INFORMATION;
+
+    if pid == 0 { return String::new(); }
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() { return String::new(); }
+
+        let mut buf = vec![0u16; 512];
+        let len = GetProcessImageFileNameW(handle, buf.as_mut_ptr(), 512);
+        CloseHandle(handle);
+
+        if len > 0 {
+            let path = String::from_utf16_lossy(&buf[..len as usize]);
+            std::path::Path::new(&path)
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        }
+    }
+}
 
 #[cfg(not(windows))]
-pub fn get_process_audio_mute(_target_pid: u32) -> bool { false }
+pub fn set_process_audio_mute(_exe_name: &str, _target_pid: u32, _mute: bool) -> Result<(), String> { Ok(()) }
+
+#[cfg(not(windows))]
+pub fn get_process_audio_mute(_exe_name: &str, _target_pid: u32) -> bool { false }

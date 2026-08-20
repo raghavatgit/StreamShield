@@ -99,9 +99,9 @@ fn toggle_shield(exe_name: String, hwnd: usize, pid: u32, enable: bool, state: S
     injector::set_window_affinity(hwnd, enable)?;
     // When shield is enabled, turn ON audio privacy mute by default
     if enable {
-        let _ = audio_manager::set_process_audio_mute(pid, true);
+        let _ = audio_manager::set_process_audio_mute(&exe_name, pid, true);
     } else {
-        let _ = audio_manager::set_process_audio_mute(pid, false);
+        let _ = audio_manager::set_process_audio_mute(&exe_name, pid, false);
     }
 
     {
@@ -121,7 +121,7 @@ fn toggle_shield(exe_name: String, hwnd: usize, pid: u32, enable: bool, state: S
 
 #[tauri::command]
 fn toggle_audio_mute(exe_name: String, pid: u32, mute: bool, state: State<AppState>) -> Result<bool, String> {
-    audio_manager::set_process_audio_mute(pid, mute)?;
+    audio_manager::set_process_audio_mute(&exe_name, pid, mute)?;
     {
         let mut config = state.config.lock().map_err(|e| e.to_string())?;
         if mute {
