@@ -886,6 +886,58 @@ html, body, #root {
   font-weight: 700;
 }
 
+.footer-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.self-stealth-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  padding: 5px 11px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.self-stealth-toggle-btn:hover {
+  border-color: var(--border-active);
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+}
+
+.self-stealth-toggle-btn.is-active {
+  background: var(--bg-card-shielded);
+  border-color: var(--border-active);
+  color: var(--primary);
+  box-shadow: 0 0 14px var(--glow-primary);
+}
+
+.stealth-indicator-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: all 0.2s ease;
+}
+
+.self-stealth-toggle-btn.is-active .stealth-indicator-dot {
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary);
+  animation: activePulse 2s infinite ease-in-out;
+}
+
+.stealth-label {
+  font-family: inherit;
+}
+
 .tray-dock-btn {
   display: flex;
   align-items: center;
@@ -895,7 +947,7 @@ html, body, #root {
   border-radius: 8px;
   padding: 5px 10px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.18s ease;

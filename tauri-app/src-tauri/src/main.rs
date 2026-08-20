@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, State,
+    Manager, State, WebviewWindow,
 };
 use window_manager::WindowInfo;
 use config::{load_config, save_config, ShieldConfig};
@@ -105,6 +105,49 @@ fn check_admin() -> bool {
     #[cfg(not(windows))] { true }
 }
 
+#[tauri::command]
+fn hide_to_tray(window: WebviewWindow) -> Result<(), String> {
+    window.hide().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn toggle_self_shield(enable: bool, window: WebviewWindow) -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        use winapi::um::winuser::SetWindowDisplayAffinity;
+        const WDA_NONE: u32 = 0x00000000;
+        const WDA_EXCLUDEFROMCAPTURE: u32 = 0x00000011;
+
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+        let affinity = if enable { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE };
+        let ok = unsafe { SetWindowDisplayAffinity(hwnd.0 as _, affinity) };
+        if ok != 0 {
+            Ok(enable)
+        } else {
+            Err("Failed to set StreamShield display affinity".to_string())
+        }
+    }
+    #[cfg(not(windows))]
+    Ok(false)
+}
+
+#[tauri::command]
+fn is_self_shielded(window: WebviewWindow) -> bool {
+    #[cfg(windows)]
+    {
+        use winapi::um::winuser::GetWindowDisplayAffinity;
+        const WDA_EXCLUDEFROMCAPTURE: u32 = 0x00000011;
+        if let Ok(hwnd) = window.hwnd() {
+            let mut affinity: u32 = 0;
+            let ok = unsafe { GetWindowDisplayAffinity(hwnd.0 as _, &mut affinity) };
+            return ok != 0 && affinity == WDA_EXCLUDEFROMCAPTURE;
+        }
+        false
+    }
+    #[cfg(not(windows))]
+    false
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 fn main() {
@@ -117,7 +160,8 @@ fn main() {
     tauri::Builder::default()
         .manage(AppState { config: Mutex::new(load_config()), tray_status: Mutex::new(None) })
         .invoke_handler(tauri::generate_handler![
-            get_windows, toggle_shield, get_shielded_exes, reapply_shields, check_admin
+            get_windows, toggle_shield, get_shielded_exes, reapply_shields, check_admin,
+            hide_to_tray, toggle_self_shield, is_self_shielded
         ])
         .setup(|app| {
             // ── Show main window ─────────────────────────────────────────

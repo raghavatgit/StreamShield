@@ -21,6 +21,7 @@ const THEMES: ThemeOption[] = [
 export default function App() {
   const [windows, setWindows] = useState<WindowInfo[]>([]);
   const [shieldedExes, setShieldedExes] = useState<Set<string>>(new Set());
+  const [isSelfShielded, setIsSelfShielded] = useState(false);
   const [search, setSearch] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "shielded" | "unshielded">("all");
   const [theme, setTheme] = useState<ThemeType>(() => {
@@ -47,14 +48,16 @@ export default function App() {
 
   const loadWindows = useCallback(async () => {
     try {
-      const [wins, savedShielded, admin] = await Promise.all([
+      const [wins, savedShielded, admin, selfShielded] = await Promise.all([
         invoke<WindowInfo[]>("get_windows"),
         invoke<string[]>("get_shielded_exes"),
         invoke<boolean>("check_admin"),
+        invoke<boolean>("is_self_shielded").catch(() => false),
       ]);
 
       setWindows(wins);
       setIsAdmin(admin);
+      setIsSelfShielded(selfShielded);
 
       // GROUND TRUTH: Populate active shield state directly from Windows OS query
       const activeShielded = new Set<string>();
@@ -111,6 +114,34 @@ export default function App() {
         return next;
       });
       showToast(String(e).replace("Error: ", ""), "error");
+    }
+  };
+
+  const handleToggleSelfShield = async () => {
+    const next = !isSelfShielded;
+    try {
+      await invoke<boolean>("toggle_self_shield", { enable: next });
+      setIsSelfShielded(next);
+      showToast(
+        next
+          ? "StreamShield app is now hidden from streams"
+          : "StreamShield app is now visible on streams",
+        next ? "success" : "info"
+      );
+    } catch (e) {
+      showToast(String(e), "error");
+    }
+  };
+
+  const handleHideToTray = async () => {
+    try {
+      await invoke("hide_to_tray");
+    } catch {
+      try {
+        getCurrentWindow().hide();
+      } catch (err) {
+        console.error("Hide error:", err);
+      }
     }
   };
 
@@ -330,14 +361,31 @@ export default function App() {
           </span>
         </div>
 
-        <button
-          className="tray-dock-btn"
-          onClick={() => getCurrentWindow().hide()}
-          title="Minimize StreamShield to system tray"
-        >
-          <span>Tray</span>
-          <span className="dock-arrow">↗</span>
-        </button>
+        <div className="footer-right-actions">
+          {/* Stream Mode for StreamShield itself */}
+          <button
+            className={`self-stealth-toggle-btn ${isSelfShielded ? "is-active" : ""}`}
+            onClick={handleToggleSelfShield}
+            title={
+              isSelfShielded
+                ? "StreamShield app is currently HIDDEN from screen capture (Click to make visible)"
+                : "Hide StreamShield window itself from screen capture/recording"
+            }
+          >
+            <span className="stealth-indicator-dot" />
+            <span className="stealth-label">App Stealth: {isSelfShielded ? "ON" : "OFF"}</span>
+          </button>
+
+          {/* Tray Minimize Button */}
+          <button
+            className="tray-dock-btn"
+            onClick={handleHideToTray}
+            title="Minimize StreamShield to system tray"
+          >
+            <span>Tray</span>
+            <span className="dock-arrow">↗</span>
+          </button>
+        </div>
       </footer>
 
       {/* Floating Toast Notification */}
