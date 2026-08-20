@@ -11,6 +11,13 @@ interface ThemeOption {
   colors: string[];
 }
 
+interface ObsStatus {
+  connected: boolean;
+  port: number;
+  active_sources: string[];
+  obs_process_running: boolean;
+}
+
 const THEMES: ThemeOption[] = [
   { id: "discord", name: "Discord Dark", colors: ["#5865f2", "#23a55a"] },
   { id: "cyberpunk", name: "Cyberpunk", colors: ["#00f0ff", "#ff007f"] },
@@ -21,6 +28,8 @@ export default function App() {
   const [windows, setWindows] = useState<WindowInfo[]>([]);
   const [shieldedExes, setShieldedExes] = useState<Set<string>>(new Set());
   const [audioShieldedExes, setAudioShieldedExes] = useState<Set<string>>(new Set());
+  const [obsStatus, setObsStatus] = useState<ObsStatus | null>(null);
+  const [obsModalOpen, setObsModalOpen] = useState(false);
   const [isSelfShielded, setIsSelfShielded] = useState(false);
   const [search, setSearch] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "shielded" | "unshielded">("all");
@@ -48,16 +57,18 @@ export default function App() {
 
   const loadWindows = useCallback(async () => {
     try {
-      const [wins, admin, selfShielded, audioExes] = await Promise.all([
+      const [wins, admin, selfShielded, audioExes, obs] = await Promise.all([
         invoke<WindowInfo[]>("get_windows"),
         invoke<boolean>("check_admin"),
         invoke<boolean>("is_self_shielded").catch(() => false),
         invoke<string[]>("get_audio_shielded_exes").catch(() => []),
+        invoke<ObsStatus>("get_obs_status").catch(() => null),
       ]);
 
       setWindows(wins);
       setIsAdmin(admin);
       setIsSelfShielded(selfShielded);
+      if (obs) setObsStatus(obs);
 
       // Populate active shield state directly from Windows OS query
       const activeShielded = new Set<string>();
@@ -80,7 +91,7 @@ export default function App() {
     loadWindows();
     const interval = setInterval(() => {
       loadWindows();
-    }, 3500);
+    }, 3000);
     window.addEventListener("focus", loadWindows);
     return () => {
       clearInterval(interval);
@@ -95,7 +106,7 @@ export default function App() {
   };
 
   const handleToggle = async (win: WindowInfo, enable: boolean) => {
-    // Optimistic update: automatically synchronize audio privacy with visual shield by default
+    // Optimistic update
     setShieldedExes((prev) => {
       const next = new Set(prev);
       if (enable) next.add(win.exe_name);
@@ -119,7 +130,7 @@ export default function App() {
       });
       showToast(
         enable
-          ? `Shielded ${win.exe_name} (Video & Audio Isolated)`
+          ? `Shielded ${win.exe_name} (Video & Stream Audio Protected)`
           : `Unshielded ${win.exe_name}`,
         enable ? "success" : "info"
       );
@@ -227,7 +238,13 @@ export default function App() {
   const percentage = windows.length > 0 ? Math.round((shieldedCount / windows.length) * 100) : 0;
 
   return (
-    <div className="streamshield-root" onClick={() => themeMenuOpen && setThemeMenuOpen(false)}>
+    <div
+      className="streamshield-root"
+      onClick={() => {
+        if (themeMenuOpen) setThemeMenuOpen(false);
+        if (obsModalOpen) setObsModalOpen(false);
+      }}
+    >
       {/* Top Header */}
       <header className="app-top-header">
         <div className="header-main-row">
@@ -240,6 +257,55 @@ export default function App() {
           </div>
 
           <div className="header-action-group">
+            {/* OBS Companion Status Badge */}
+            <div className="obs-badge-container" onClick={(e) => e.stopPropagation()}>
+              <button
+                className={`obs-status-pill ${
+                  obsStatus?.connected
+                    ? "is-connected"
+                    : obsStatus?.obs_process_running
+                    ? "is-running"
+                    : "is-idle"
+                }`}
+                onClick={() => setObsModalOpen(!obsModalOpen)}
+                title="OBS Studio Companion & Audio Isolation Settings"
+              >
+                <span className="obs-dot" />
+                <span className="obs-pill-label">
+                  {obsStatus?.connected
+                    ? "OBS Connected"
+                    : obsStatus?.obs_process_running
+                    ? "OBS Running"
+                    : "OBS Companion"}
+                </span>
+              </button>
+
+              {obsModalOpen && (
+                <div className="obs-popover-card">
+                  <div className="obs-popover-header">
+                    <span className="obs-popover-title">OBS Studio Companion</span>
+                    <span className={`obs-badge ${obsStatus?.connected ? "badge-green" : "badge-gray"}`}>
+                      {obsStatus?.connected ? "v5 Connected" : "Standby"}
+                    </span>
+                  </div>
+                  <p className="obs-popover-desc">
+                    StreamShield coordinates visual capture exclusion and stream audio privacy.
+                    Private audio plays 100% in your headphones while being excluded from the stream feed.
+                  </p>
+                  <div className="obs-info-box">
+                    <div className="obs-info-row">
+                      <span className="obs-info-label">WebSocket Port:</span>
+                      <span className="obs-info-val">{obsStatus?.port || 4455}</span>
+                    </div>
+                    <div className="obs-info-row">
+                      <span className="obs-info-label">Active OBS Audio Inputs:</span>
+                      <span className="obs-info-val">{obsStatus?.active_sources.length || 0}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Theme Selector Popover */}
             <div className="theme-picker-container" onClick={(e) => e.stopPropagation()}>
               <button

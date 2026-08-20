@@ -5,8 +5,9 @@ mod window_manager;
 mod injector;
 mod config;
 mod audio_bridge;
+mod obs_companion;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -14,6 +15,7 @@ use tauri::{
 };
 use window_manager::WindowInfo;
 use config::{load_config, save_config, ShieldConfig};
+use obs_companion::{ObsSettings, ObsStatus};
 
 struct AppState {
     config: Mutex<ShieldConfig>,
@@ -115,6 +117,7 @@ fn toggle_shield(exe_name: String, hwnd: usize, pid: u32, enable: bool, state: S
             config.audio_shielded_exes.remove(&exe_name);
         }
         save_config(&config);
+        obs_companion::sync_shielded_with_obs(&config.shielded_exes);
     }
     update_tray_status(&state);
     Ok(true)
@@ -136,8 +139,28 @@ fn toggle_audio_shield(exe_name: String, pid: u32, enable: bool, state: State<Ap
             config.audio_shielded_exes.remove(&exe_name);
         }
         save_config(&config);
+        obs_companion::sync_shielded_with_obs(&config.shielded_exes);
     }
     Ok(enable)
+}
+
+#[tauri::command]
+fn get_obs_status() -> ObsStatus {
+    obs_companion::get_obs_status()
+}
+
+#[tauri::command]
+fn set_obs_config(settings: ObsSettings, state: State<AppState>) -> Result<(), String> {
+    {
+        let mut config = state.config.lock().map_err(|e| e.to_string())?;
+        config.obs_port = settings.port;
+        config.obs_password = settings.password.clone();
+        config.obs_auto_sync = settings.auto_sync;
+        save_config(&config);
+    }
+    obs_companion::set_obs_settings(settings);
+    obs_companion::try_connect_obs();
+    Ok(())
 }
 
 #[tauri::command]
@@ -222,10 +245,18 @@ fn main() {
         std::process::exit(0);
     }
 
+    let initial_config = load_config();
+    obs_companion::set_obs_settings(ObsSettings {
+        port: initial_config.obs_port,
+        password: initial_config.obs_password.clone(),
+        auto_sync: initial_config.obs_auto_sync,
+    });
+
     tauri::Builder::default()
-        .manage(AppState { config: Mutex::new(load_config()), tray_status: Mutex::new(None) })
+        .manage(AppState { config: Mutex::new(initial_config), tray_status: Mutex::new(None) })
         .invoke_handler(tauri::generate_handler![
             get_windows, toggle_shield, toggle_audio_shield,
+            get_obs_status, set_obs_config,
             get_shielded_exes, get_audio_shielded_exes, reapply_shields,
             check_admin, hide_to_tray, toggle_self_shield, is_self_shielded
         ])
@@ -291,6 +322,17 @@ fn main() {
                     _ => {}
                 })
                 .build(app)?;
+
+            // ── OBS Companion Daemon ─────────────────────────────────────
+            let app_handle_obs = app.handle().clone();
+            let provider = Arc::new(move || {
+                if let Some(state) = app_handle_obs.try_state::<AppState>() {
+                    state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default()
+                } else {
+                    std::collections::HashSet::new()
+                }
+            });
+            obs_companion::start_obs_companion_daemon(provider);
 
             // ── Auto-Shield & Live Tray Update Background Watchdog Daemon ──
             let app_handle = app.handle().clone();

@@ -13,6 +13,7 @@ serde_json = "1"
 dirs = "5"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png"] }
+tungstenite = { version = "0.21", default-features = false, features = ["handshake"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = [

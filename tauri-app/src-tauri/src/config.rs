@@ -2,11 +2,33 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShieldConfig {
+    #[serde(default)]
     pub shielded_exes: HashSet<String>,
     #[serde(default)]
     pub audio_shielded_exes: HashSet<String>,
+    #[serde(default = "default_obs_port")]
+    pub obs_port: u16,
+    #[serde(default)]
+    pub obs_password: Option<String>,
+    #[serde(default = "default_true")]
+    pub obs_auto_sync: bool,
+}
+
+fn default_obs_port() -> u16 { 4455 }
+fn default_true() -> bool { true }
+
+impl Default for ShieldConfig {
+    fn default() -> Self {
+        Self {
+            shielded_exes: HashSet::new(),
+            audio_shielded_exes: HashSet::new(),
+            obs_port: 4455,
+            obs_password: None,
+            obs_auto_sync: true,
+        }
+    }
 }
 
 fn config_path() -> PathBuf {
