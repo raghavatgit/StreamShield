@@ -100,15 +100,8 @@ export default function App() {
   };
 
   const handleToggle = async (win: WindowInfo, enable: boolean) => {
-    // Optimistic update: when enabling shield, also enable audio privacy mute by default
+    // Optimistic update
     setShieldedExes((prev) => {
-      const next = new Set(prev);
-      if (enable) next.add(win.exe_name);
-      else next.delete(win.exe_name);
-      return next;
-    });
-
-    setAudioMutedExes((prev) => {
       const next = new Set(prev);
       if (enable) next.add(win.exe_name);
       else next.delete(win.exe_name);
@@ -123,9 +116,7 @@ export default function App() {
         enable,
       });
       showToast(
-        enable
-          ? `Shielded ${win.exe_name} (Capture & Audio Muted)`
-          : `Unshielded ${win.exe_name}`,
+        enable ? `Shielded ${win.exe_name}` : `Unshielded ${win.exe_name}`,
         enable ? "success" : "info"
       );
     } catch (e) {

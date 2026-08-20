@@ -95,23 +95,14 @@ fn get_windows(state: State<AppState>) -> Vec<WindowInfo> {
 }
 
 #[tauri::command]
-fn toggle_shield(exe_name: String, hwnd: usize, pid: u32, enable: bool, state: State<AppState>) -> Result<bool, String> {
+fn toggle_shield(exe_name: String, hwnd: usize, _pid: u32, enable: bool, state: State<AppState>) -> Result<bool, String> {
     injector::set_window_affinity(hwnd, enable)?;
-    // When shield is enabled, turn ON audio privacy mute by default
-    if enable {
-        let _ = audio_manager::set_process_audio_mute(&exe_name, pid, true);
-    } else {
-        let _ = audio_manager::set_process_audio_mute(&exe_name, pid, false);
-    }
-
     {
         let mut config = state.config.lock().map_err(|e| e.to_string())?;
         if enable {
-            config.shielded_exes.insert(exe_name.clone());
-            config.audio_muted_exes.insert(exe_name);
+            config.shielded_exes.insert(exe_name);
         } else {
             config.shielded_exes.remove(&exe_name);
-            config.audio_muted_exes.remove(&exe_name);
         }
         save_config(&config);
     }
