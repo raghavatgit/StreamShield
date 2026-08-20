@@ -227,6 +227,9 @@ fn main() {
             let quit   = MenuItem::with_id(app, "quit",   "Quit",                  true, None::<&str>)?;
             let menu   = Menu::with_items(app, &[&show, &sep1, &status, &sep2, &quit])?;
 
+            // Unmute any previously muted audio sessions
+            audio_manager::unmute_all_sessions();
+
             // Store status item handle so toggle_shield can update it
             if let Some(state) = app.try_state::<AppState>() {
                 if let Ok(mut guard) = state.tray_status.lock() {
