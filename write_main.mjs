@@ -1,4 +1,6 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+import fs from "fs";
+const p = "C:\\Users\\GOYAL\\Documents\\work\\StreamShield\\tauri-app\\src-tauri\\src\\main.rs";
+const c = `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod window_manager;
 mod injector;
@@ -34,7 +36,8 @@ fn reapply_shields(state: State<AppState>) -> Vec<String> {
     window_manager::enumerate_windows().into_iter()
         .filter(|w| exes.contains(&w.exe_name))
         .filter(|w| injector::set_window_affinity(w.hwnd, true).is_ok())
-        .map(|w| w.exe_name).collect()
+        .map(|w| w.exe_name)
+        .collect()
 }
 
 fn main() {
@@ -45,16 +48,20 @@ fn main() {
         ])
         .setup(|app| {
             let win = app.get_webview_window("main").ok_or("no main window")?;
-            let _ = win.show();
-            let _ = win.set_focus();
+            let w2 = win.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(2000));
+                let _ = w2.show();
+                let _ = w2.set_focus();
+                let _ = w2.center();
+                eprintln!("[StreamShield] window forced show");
+            });
+            eprintln!("[StreamShield] setup complete");
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
-            }
-        })
         .run(tauri::generate_context!())
-        .expect("StreamShield error");
+        .expect("StreamShield crashed");
 }
+`;
+fs.writeFileSync(p, c, "utf8");
+console.log("Written:", p.split("\\").pop(), "| starts:", JSON.stringify(c.slice(0,20)));

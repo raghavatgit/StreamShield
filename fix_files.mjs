@@ -1,4 +1,16 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+import fs from "fs";
+import path from "path";
+
+const ta = "C:\\Users\\GOYAL\\Documents\\work\\StreamShield\\tauri-app";
+
+const write = (rel, content) => {
+  const full = path.join(ta, rel);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.writeFileSync(full, content, "utf8");
+  console.log(`OK: ${rel} => ${JSON.stringify(content.slice(0,15))}`);
+};
+
+write("src/index.css", `@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
   --bg-base: #0a0c10; --bg-surface: #111318; --bg-card: #161a22; --bg-hover: #1c2030;
@@ -90,3 +102,159 @@ html, body, #root { height: 100%; width: 100%; overflow: hidden; font-family: va
   background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: var(--radius-md); }
 @keyframes shimmer { from { background-position:200% 0; } to { background-position:-200% 0; } }
 .shimmer-row { height: 54px; margin-bottom: 3px; }
+`);
+
+write("src/App.tsx", `import { useState, useEffect, useCallback, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import AppRow from "./components/AppRow";
+
+interface WindowInfo { hwnd: number; pid: number; title: string; exe_name: string; }
+
+export default function App() {
+  const [windows, setWindows] = useState<WindowInfo[]>([]);
+  const [shieldedExes, setShieldedExes] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const errorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadWindows = useCallback(async () => {
+    try {
+      const [wins, shielded] = await Promise.all([
+        invoke<WindowInfo[]>("get_windows"),
+        invoke<string[]>("get_shielded_exes"),
+      ]);
+      setWindows(wins);
+      setShieldedExes(new Set(shielded));
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); setRefreshing(false); }
+  }, []);
+
+  useEffect(() => { loadWindows(); }, [loadWindows]);
+
+  const handleRefresh = async () => { setRefreshing(true); await loadWindows(); };
+
+  const showError = (msg: string) => {
+    setError(msg);
+    if (errorTimer.current) clearTimeout(errorTimer.current);
+    errorTimer.current = setTimeout(() => setError(null), 5000);
+  };
+
+  const handleToggle = async (win: WindowInfo, enable: boolean) => {
+    setShieldedExes(prev => { const n = new Set(prev); enable ? n.add(win.exe_name) : n.delete(win.exe_name); return n; });
+    try {
+      await invoke<boolean>("toggle_shield", { exeName: win.exe_name, hwnd: win.hwnd, enable });
+    } catch (e) {
+      setShieldedExes(prev => { const n = new Set(prev); enable ? n.delete(win.exe_name) : n.add(win.exe_name); return n; });
+      showError(String(e));
+    }
+  };
+
+  const filtered = windows.filter(w =>
+    w.exe_name.toLowerCase().includes(search.toLowerCase()) ||
+    w.title.toLowerCase().includes(search.toLowerCase())
+  );
+  const shieldedCount = [...shieldedExes].filter(e => windows.some(w => w.exe_name === e)).length;
+
+  return (
+    <div className="app">
+      <header className="header">
+        <div className="header-top">
+          <div className="logo">???</div>
+          <span className="app-name">StreamShield</span>
+          <span className="app-tagline">Stream Privacy Manager</span>
+        </div>
+        <div className="status-bar">
+          {shieldedCount > 0 ? (
+            <div className="status-badge active">
+              <div className="status-dot pulse" />
+              {shieldedCount} app{shieldedCount !== 1 ? "s" : ""} hidden from capture
+            </div>
+          ) : (
+            <div className="status-badge inactive">
+              <div className="status-dot" /> No apps shielded
+            </div>
+          )}
+        </div>
+      </header>
+      <div className="search-wrap">
+        <span className="search-icon">??</span>
+        <input className="search-input" type="text" placeholder="Search applications..."
+          value={search} onChange={e => setSearch(e.target.value)} />
+      </div>
+      <div className="list-header">
+        <span>Running Applications ({filtered.length})</span>
+        <button className={\`refresh-btn\${refreshing ? " spinning" : ""}\`} onClick={handleRefresh}>
+          ? Refresh
+        </button>
+      </div>
+      <div className="window-list">
+        {loading ? Array.from({length:6}).map((_,i) => <div key={i} className="shimmer shimmer-row"/>) :
+         filtered.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">??</div>
+            <div className="empty-title">No applications found</div>
+            <div>{search ? "Try a different search" : "Open apps and click Refresh"}</div>
+          </div>
+        ) : filtered.map(win => (
+          <AppRow key={win.hwnd} window={win} shielded={shieldedExes.has(win.exe_name)} onToggle={handleToggle}/>
+        ))}
+      </div>
+      <footer className="footer">
+        <div className="footer-count"><span>{shieldedCount}</span> of {windows.length} shielded</div>
+        <button className="minimize-btn" onClick={() => getCurrentWindow().hide()}>Minimize to tray ?</button>
+      </footer>
+      {error && <div className="toast">{error}</div>}
+    </div>
+  );
+}
+`);
+
+write("src/components/AppRow.tsx", `interface WindowInfo { hwnd: number; pid: number; title: string; exe_name: string; }
+interface Props { window: WindowInfo; shielded: boolean; onToggle: (w: WindowInfo, e: boolean) => void; }
+
+function exeColor(name: string) {
+  const colors = ["#63b3ed","#68d391","#f6ad55","#fc8181","#b794f4","#76e4f7","#fbb6ce","#9ae6b4"];
+  let hash = 0;
+  for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) & 0xffffffff;
+  return colors[Math.abs(hash) % colors.length];
+}
+
+export default function AppRow({ window: win, shielded, onToggle }: Props) {
+  const color = exeColor(win.exe_name);
+  const initial = win.exe_name.replace(/\\.exe$/i,"")[0]?.toUpperCase() ?? "?";
+  return (
+    <div className={\`app-row\${shielded?" shielded":""}\`} id={\`app-row-\${win.pid}\`}>
+      <div className="shield-indicator"/>
+      <div className="app-icon">
+        <span className="app-icon-letter" style={{color}}>{initial}</span>
+      </div>
+      <div className="app-info">
+        <div className="app-name-row" title={win.title}>{win.exe_name.replace(/\\.exe$/i,"")}</div>
+        <div className="app-pid">PID {win.pid} · {win.title.slice(0,35)}{win.title.length>35?"…":""}</div>
+      </div>
+      <div className="toggle-wrap">
+        <span className={\`toggle-label\${shielded?" on":""}\`}>{shielded?"ON":"OFF"}</span>
+        <label className="toggle" htmlFor={\`t-\${win.pid}\`}>
+          <input id={\`t-\${win.pid}\`} type="checkbox" checked={shielded} onChange={e=>onToggle(win,e.target.checked)}/>
+          <span className="toggle-slider"/>
+        </label>
+      </div>
+    </div>
+  );
+}
+`);
+
+write("src/main.tsx", `import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./index.css";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode><App /></React.StrictMode>
+);
+`);
+
+console.log("All files written successfully!");

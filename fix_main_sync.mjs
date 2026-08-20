@@ -1,4 +1,6 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+import fs from "fs";
+const p = "C:\\Users\\GOYAL\\Documents\\work\\StreamShield\\tauri-app\\src-tauri\\src\\main.rs";
+const c = `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod window_manager;
 mod injector;
@@ -58,3 +60,6 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("StreamShield error");
 }
+`;
+fs.writeFileSync(p, c, "utf8");
+console.log("OK main.rs | starts:", JSON.stringify(c.slice(0,20)));
