@@ -57,10 +57,14 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool) -> Result<(), String> 
         MEM_COMMIT, MEM_RESERVE, MEM_RELEASE, PAGE_READWRITE,
     };
 
-    // Write DLL to temp directory
-    let dll_path = std::env::temp_dir().join("streamshield_hook.dll");
-    std::fs::write(&dll_path, DLL_BYTES)
-        .map_err(|e| format!("Write DLL: {e}"))?;
+    // Write DLL to a PID-unique temp path to avoid sharing violations.
+    // If write fails because the file is already in use, reuse it (same bytes).
+    let dll_name = format!("streamshield_hook_{}.dll", std::process::id());
+    let dll_path = std::env::temp_dir().join(&dll_name);
+    if !dll_path.exists() {
+        std::fs::write(&dll_path, DLL_BYTES)
+            .map_err(|e| format!("Write DLL: {e}"))?;
+    }
     let dll_cstr = std::ffi::CString::new(
         dll_path.to_str().ok_or("bad dll path")?
     ).map_err(|e| e.to_string())?;
