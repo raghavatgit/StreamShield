@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, State, WebviewWindow,
+    Emitter, Manager, State, WebviewWindow,
 };
 use window_manager::WindowInfo;
 use config::{load_config, save_config, ShieldConfig};
@@ -19,7 +19,7 @@ struct AppState {
     tray_status: Mutex<Option<MenuItem<tauri::Wry>>>,
 }
 
-// ── Admin helpers ────────────────────────────────────────────────────────────
+// ── Admin & Power helpers ───────────────────────────────────────────────────
 
 #[cfg(windows)]
 fn is_admin() -> bool {
@@ -50,6 +50,19 @@ fn relaunch_as_admin() {
     let verb_w = wide("runas");
     unsafe { ShellExecuteW(std::ptr::null_mut(), verb_w.as_ptr(), exe_w.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOW as i32); }
 }
+
+#[cfg(windows)]
+fn disable_power_throttling() {
+    use winapi::um::winbase::SetThreadExecutionState;
+    use winapi::um::winnt::{ES_CONTINUOUS, ES_SYSTEM_REQUIRED};
+    unsafe {
+        // Prevent Windows from suspending background watchdog thread and timer execution
+        SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
+    }
+}
+
+#[cfg(not(windows))]
+fn disable_power_throttling() {}
 
 // ── Tray status helpers ───────────────────────────────────────────────────────
 
@@ -177,6 +190,8 @@ fn main() {
         std::process::exit(0);
     }
 
+    disable_power_throttling();
+
     tauri::Builder::default()
         .manage(AppState { config: Mutex::new(load_config()), tray_status: Mutex::new(None) })
         .invoke_handler(tauri::generate_handler![
@@ -228,7 +243,9 @@ fn main() {
                                 let _ = w.hide();
                             } else {
                                 let _ = w.show();
+                                let _ = w.unminimize();
                                 let _ = w.set_focus();
+                                let _ = w.emit("app_wake", ());
                             }
                         }
                     }
@@ -238,7 +255,9 @@ fn main() {
                     "show" => {
                         if let Some(w) = app.get_webview_window("main") {
                             let _ = w.show();
+                            let _ = w.unminimize();
                             let _ = w.set_focus();
+                            let _ = w.emit("app_wake", ());
                         }
                     }
                     "quit" => app.exit(0),
@@ -251,6 +270,7 @@ fn main() {
             std::thread::spawn(move || {
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(2000));
+                    disable_power_throttling();
                     if let Some(state) = app_handle.try_state::<AppState>() {
                         let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();
                         if !shielded.is_empty() {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import AppRow, { WindowInfo } from "./components/AppRow";
 
 export type ThemeType = "discord" | "cyberpunk" | "neumorphic-white";
@@ -77,11 +78,27 @@ export default function App() {
     loadWindows();
     const interval = setInterval(() => {
       loadWindows();
-    }, 3000);
-    window.addEventListener("focus", loadWindows);
+    }, 2500);
+
+    const onFocus = () => loadWindows();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        loadWindows();
+      }
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    const unlistenPromise = listen("app_wake", () => {
+      loadWindows();
+    });
+
     return () => {
       clearInterval(interval);
-      window.removeEventListener("focus", loadWindows);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      unlistenPromise.then((unlisten) => unlisten());
     };
   }, [loadWindows]);
 

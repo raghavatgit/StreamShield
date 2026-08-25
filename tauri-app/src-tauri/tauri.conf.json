@@ -18,7 +18,8 @@
         "minHeight": 620,
         "resizable": true,
         "center": true,
-        "decorations": true
+        "decorations": true,
+        "additionalBrowserArgs": "--disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling"
       }
     ],
     "security": {
