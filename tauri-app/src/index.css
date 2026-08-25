@@ -62,28 +62,28 @@
 }
 
 [data-theme="neumorphic-white"] {
-  --bg-base: #eef2f6;
-  --bg-surface: #f4f7fb;
-  --bg-card: #eef2f6;
-  --bg-card-hover: #f7f9fc;
-  --bg-card-shielded: #e5ebf3;
-  --border-subtle: rgba(0, 0, 0, 0.06);
-  --border-card: rgba(255, 255, 255, 0.9);
-  --border-active: rgba(79, 70, 229, 0.55);
-  --text-primary: #1e293b;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
+  --bg-base: #f1f5f9;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8fafc;
+  --bg-card-shielded: #eef2ff;
+  --border-subtle: #e2e8f0;
+  --border-card: #cbd5e1;
+  --border-active: #4f46e5;
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
   --primary: #4f46e5;
-  --accent: #06b6d4;
-  --brand-gradient: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
-  --toggle-rail-off: #d5dde8;
+  --accent: #0284c7;
+  --brand-gradient: linear-gradient(135deg, #4f46e5 0%, #0284c7 100%);
+  --toggle-rail-off: #cbd5e1;
   --toggle-rail-on: #4f46e5;
   --toggle-knob: #ffffff;
-  --glow-accent: rgba(79, 70, 229, 0.25);
+  --glow-accent: rgba(79, 70, 229, 0.2);
   --ambient-glow-1: rgba(79, 70, 229, 0.08);
-  --ambient-glow-2: rgba(6, 182, 212, 0.08);
-  --card-shadow: 4px 4px 10px rgba(166, 180, 200, 0.5), -4px -4px 10px #ffffff;
-  --inset-shadow: inset 2px 2px 5px rgba(166, 180, 200, 0.5), inset -2px -2px 5px #ffffff;
+  --ambient-glow-2: rgba(2, 132, 199, 0.08);
+  --card-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --inset-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
 /* ==========================================================================
@@ -602,7 +602,7 @@ html, body, #root {
 
 .app-card:hover {
   background: var(--bg-card-hover);
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: var(--border-active);
   transform: translateY(-1px);
 }
 
@@ -689,10 +689,10 @@ html, body, #root {
   font-weight: 600;
   font-family: "JetBrains Mono", monospace;
   color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-surface);
   padding: 1px 5px;
   border-radius: 4px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-card);
 }
 
 .shield-tag {
@@ -902,7 +902,7 @@ html, body, #root {
 .coverage-bar-track {
   width: 70px;
   height: 5px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-card);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -1049,3 +1049,26 @@ html, body, #root {
 .toast-symbol {
   font-size: 12px;
 }
+
+/* ==========================================================================
+   LIGHT THEME ENHANCEMENTS & CONTRAST POLISH
+   ========================================================================== */
+
+[data-theme="neumorphic-white"] .theme-popover-menu {
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12), 0 4px 6px rgba(15, 23, 42, 0.05);
+}
+
+[data-theme="neumorphic-white"] .floating-toast {
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.15);
+}
+
+[data-theme="neumorphic-white"] .tab-segment-btn.is-current {
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+}
+
+[data-theme="neumorphic-white"] .admin-status-banner {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #b45309;
+}
+

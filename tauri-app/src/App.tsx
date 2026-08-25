@@ -15,7 +15,7 @@ interface ThemeOption {
 const THEMES: ThemeOption[] = [
   { id: "discord", name: "Discord Dark", colors: ["#5865f2", "#23a55a"] },
   { id: "cyberpunk", name: "Cyberpunk", colors: ["#00f0ff", "#ff007f"] },
-  { id: "neumorphic-white", name: "Neumorphic White", colors: ["#ffffff", "#4f46e5"] },
+  { id: "neumorphic-white", name: "Clean White", colors: ["#ffffff", "#4f46e5"] },
 ];
 
 export default function App() {
