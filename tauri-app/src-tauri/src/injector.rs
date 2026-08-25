@@ -32,13 +32,40 @@ fn get_window_pid(hwnd: usize) -> Result<u32, String> {
 
 #[cfg(windows)]
 fn set_affinity_direct(hwnd: usize, enable: bool) -> Result<(), String> {
-    use winapi::um::winuser::SetWindowDisplayAffinity;
+    use winapi::shared::windef::HWND;
+    use winapi::um::winuser::{
+        SetWindowDisplayAffinity, SetWindowPos, RedrawWindow,
+        SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_NOACTIVATE, SWP_FRAMECHANGED,
+        RDW_INVALIDATE, RDW_ERASE, RDW_FRAME, RDW_ALLCHILDREN, RDW_UPDATENOW,
+    };
     const WDA_NONE: u32 = 0x00000000;
     const WDA_EXCLUDEFROMCAPTURE: u32 = 0x00000011;
+    const WDA_MONITOR: u32 = 0x00000001;
+
     let affinity = if enable { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE };
-    let ok = unsafe { SetWindowDisplayAffinity(hwnd as _, affinity) };
-    if ok != 0 { Ok(()) }
-    else { Err(format!("SetWindowDisplayAffinity failed: {}", last_os_error())) }
+    let mut ok = unsafe { SetWindowDisplayAffinity(hwnd as _, affinity) };
+    if ok == 0 && enable {
+        ok = unsafe { SetWindowDisplayAffinity(hwnd as _, WDA_MONITOR) };
+    }
+    if ok != 0 {
+        unsafe {
+            SetWindowPos(
+                hwnd as HWND,
+                std::ptr::null_mut(),
+                0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            );
+            RedrawWindow(
+                hwnd as HWND,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW,
+            );
+        }
+        Ok(())
+    } else {
+        Err(format!("SetWindowDisplayAffinity failed: {}", last_os_error()))
+    }
 }
 
 /// Get the real 64-bit base address of a module in the remote process.
@@ -147,9 +174,8 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool) -> Result<(), String> 
         VirtualFreeEx(proc, remote_path, 0, MEM_RELEASE);
 
         // ── ASLR fix: use module snapshot for real 64-bit remote base ────────
-        // (GetExitCodeThread only gives 32-bit, wrong above 4GB)
         let remote_base = get_remote_module_base(pid, &dll_basename)
-            .ok_or_else(|| format!("DLL not found in remote process modules (injection may have failed for PID {})", pid))?;
+            .ok_or_else(|| format!("DLL not found in remote process modules (PID {})", pid))?;
 
         // Load DLL locally to compute function offset
         let our_dll = LoadLibraryA(dll_cstr.as_ptr());
@@ -170,8 +196,8 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool) -> Result<(), String> 
         let remote_fn = remote_base.wrapping_add(fn_offset);
         FreeLibrary(our_dll);
 
-        // Encode: low 32 bits = hwnd, bit 32 = enable flag
-        let param = (hwnd & 0xFFFF_FFFF) | (if enable { 1usize << 32 } else { 0 });
+        // Encode: bit 63 = enable flag, bits 0-62 = HWND handle value
+        let param = (hwnd & !(1usize << 63)) | (if enable { 1usize << 63 } else { 0 });
 
         let t2 = CreateRemoteThread(proc, null_mut(), 0,
             Some(std::mem::transmute(remote_fn)),
