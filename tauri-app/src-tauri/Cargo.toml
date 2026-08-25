@@ -24,3 +24,11 @@ winapi = { version = "0.3", features = [
   "tlhelp32", "wingdi", "dwmapi",
   "combaseapi", "objbase", "unknwnbase", "guiddef",
 ] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
