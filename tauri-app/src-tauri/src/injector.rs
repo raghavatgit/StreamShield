@@ -5,6 +5,17 @@ use std::ptr::null_mut;
 
 const DLL_BYTES: &[u8] = include_bytes!("shield_dll.dll");
 
+/// RAII wrapper to guarantee handle closure across all error paths
+struct AutoCloseHandle(winapi::um::winnt::HANDLE);
+
+impl Drop for AutoCloseHandle {
+    fn drop(&mut self) {
+        if !self.0.is_null() && self.0 != winapi::um::handleapi::INVALID_HANDLE_VALUE {
+            unsafe { winapi::um::handleapi::CloseHandle(self.0); }
+        }
+    }
+}
+
 /// Shield or unshield a window from screen capture.
 pub fn set_window_affinity(hwnd: usize, enable: bool) -> Result<(), String> {
     #[cfg(windows)]
@@ -138,22 +149,22 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool) -> Result<(), String> 
     unsafe {
         let access = PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION
             | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE;
-        let proc = OpenProcess(access, 0, pid);
-        if proc.is_null() {
+        let proc_handle = OpenProcess(access, 0, pid);
+        if proc_handle.is_null() {
             return Err(format!("OpenProcess({}): {}", pid, last_os_error()));
         }
+        let _proc_guard = AutoCloseHandle(proc_handle);
 
         let path_len = dll_cstr.as_bytes_with_nul().len();
 
-        let remote_path = VirtualAllocEx(proc, null_mut(), path_len,
+        let remote_path = VirtualAllocEx(proc_handle, null_mut(), path_len,
             MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
         if remote_path.is_null() {
-            CloseHandle(proc);
             return Err(format!("VirtualAllocEx: {}", last_os_error()));
         }
 
         let mut written = 0usize;
-        WriteProcessMemory(proc, remote_path, dll_cstr.as_ptr() as _, path_len, &mut written);
+        WriteProcessMemory(proc_handle, remote_path, dll_cstr.as_ptr() as _, path_len, &mut written);
 
         // kernel32 maps at the same VA in every process (shared section, no ASLR between procs)
         let k32 = LoadLibraryA(b"kernel32.dll\0".as_ptr() as _);
@@ -161,17 +172,16 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool) -> Result<(), String> 
         FreeLibrary(k32);
 
         // Inject DLL into target process
-        let t1 = CreateRemoteThread(proc, null_mut(), 0,
+        let t1 = CreateRemoteThread(proc_handle, null_mut(), 0,
             Some(std::mem::transmute(load_lib)),
             remote_path, 0, null_mut());
         if t1.is_null() {
-            VirtualFreeEx(proc, remote_path, 0, MEM_RELEASE);
-            CloseHandle(proc);
+            VirtualFreeEx(proc_handle, remote_path, 0, MEM_RELEASE);
             return Err(format!("CreateRemoteThread(LoadLib): {}", last_os_error()));
         }
         WaitForSingleObject(t1, 8000);
         CloseHandle(t1);
-        VirtualFreeEx(proc, remote_path, 0, MEM_RELEASE);
+        VirtualFreeEx(proc_handle, remote_path, 0, MEM_RELEASE);
 
         // ── ASLR fix: use module snapshot for real 64-bit remote base ────────
         let remote_base = get_remote_module_base(pid, &dll_basename)
@@ -180,13 +190,11 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool) -> Result<(), String> 
         // Load DLL locally to compute function offset
         let our_dll = LoadLibraryA(dll_cstr.as_ptr());
         if our_dll.is_null() {
-            CloseHandle(proc);
             return Err(format!("LoadLibrary locally: {}", last_os_error()));
         }
         let fn_ptr = GetProcAddress(our_dll, b"shield_window\0".as_ptr() as _);
         if fn_ptr.is_null() {
             FreeLibrary(our_dll);
-            CloseHandle(proc);
             return Err("shield_window not exported by DLL".to_string());
         }
 
@@ -199,16 +207,14 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool) -> Result<(), String> 
         // Encode: bit 63 = enable flag, bits 0-62 = HWND handle value
         let param = (hwnd & !(1usize << 63)) | (if enable { 1usize << 63 } else { 0 });
 
-        let t2 = CreateRemoteThread(proc, null_mut(), 0,
+        let t2 = CreateRemoteThread(proc_handle, null_mut(), 0,
             Some(std::mem::transmute(remote_fn)),
             param as _, 0, null_mut());
         if t2.is_null() {
-            CloseHandle(proc);
             return Err(format!("CreateRemoteThread(shield_window): {}", last_os_error()));
         }
         WaitForSingleObject(t2, 5000);
         CloseHandle(t2);
-        CloseHandle(proc);
     }
 
     Ok(())

@@ -199,7 +199,7 @@ fn query_live_affinity(hwnd: usize) -> bool {
 #[cfg(windows)]
 fn get_process_info(pid: u32) -> (String, String) {
     use winapi::um::processthreadsapi::OpenProcess;
-    use winapi::um::psapi::GetProcessImageFileNameW;
+    use winapi::um::winbase::QueryFullProcessImageNameW;
     use winapi::um::handleapi::CloseHandle;
     use winapi::um::winnt::PROCESS_QUERY_LIMITED_INFORMATION;
 
@@ -210,10 +210,11 @@ fn get_process_info(pid: u32) -> (String, String) {
         }
 
         let mut buf = vec![0u16; 1024];
-        let len = GetProcessImageFileNameW(handle, buf.as_mut_ptr(), 1024);
+        let mut len = 1024u32;
+        let ok = QueryFullProcessImageNameW(handle, 0, buf.as_mut_ptr(), &mut len);
         CloseHandle(handle);
 
-        if len == 0 {
+        if ok == 0 || len == 0 {
             return (format!("PID {pid}"), String::new());
         }
 

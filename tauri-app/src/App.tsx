@@ -117,6 +117,14 @@ export default function App() {
       return next;
     });
 
+    setWindows((prev) =>
+      prev.map((w) =>
+        w.exe_name.toLowerCase() === win.exe_name.toLowerCase()
+          ? { ...w, is_shielded: enable }
+          : w
+      )
+    );
+
     try {
       await invoke<boolean>("toggle_shield", {
         exeName: win.exe_name,
@@ -136,6 +144,13 @@ export default function App() {
         else next.add(win.exe_name);
         return next;
       });
+      setWindows((prev) =>
+        prev.map((w) =>
+          w.exe_name.toLowerCase() === win.exe_name.toLowerCase()
+            ? { ...w, is_shielded: !enable }
+            : w
+        )
+      );
       showToast(String(e).replace("Error: ", ""), "error");
     }
   };
