@@ -43,9 +43,11 @@ export default function AppRow({
       id={`app-row-${win.pid}-${win.hwnd}`}
       onClick={(e) => {
         const target = e.target as HTMLElement;
-        if (target.tagName !== "INPUT") {
-          onToggle(win, !shielded);
+        // Skip if click originated inside the toggle switch area (prevents double-fire)
+        if (target.tagName === "INPUT" || target.closest(".switch-wrapper")) {
+          return;
         }
+        onToggle(win, !shielded);
       }}
     >
       <div className="card-accent-strip" />

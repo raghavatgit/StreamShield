@@ -1020,7 +1020,7 @@ html, body, #root {
   color: var(--text-primary);
   z-index: 200;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  animation: toastPop 0.2s ease-out;
+  animation: toastPop 0.2s ease-out, toastFadeOut 0.35s ease-in 3.1s forwards;
 }
 
 @keyframes toastPop {
@@ -1028,22 +1028,27 @@ html, body, #root {
   to { opacity: 1; transform: translate(-50%, 0); }
 }
 
+@keyframes toastFadeOut {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to { opacity: 0; transform: translate(-50%, 8px); }
+}
+
 .floating-toast.success {
-  border-color: #23a55a;
-  color: #23a55a;
-  box-shadow: 0 0 16px rgba(35, 165, 90, 0.35);
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 0 16px var(--glow-accent);
 }
 
 .floating-toast.info {
-  border-color: #00f0ff;
-  color: #00f0ff;
-  box-shadow: 0 0 16px rgba(0, 240, 255, 0.35);
+  border-color: var(--border-active);
+  color: var(--text-secondary);
+  box-shadow: 0 0 16px var(--glow-accent);
 }
 
 .floating-toast.error {
-  border-color: #ff007f;
-  color: #ff007f;
-  box-shadow: 0 0 16px rgba(255, 0, 127, 0.35);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 16px rgba(255, 0, 127, 0.25);
 }
 
 .toast-symbol {

@@ -33,6 +33,7 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(true);
   const [toast, setToast] = useState<{ message: string; type?: "error" | "info" | "success" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastLoadTime = useRef<number>(0);
 
   // Apply theme to document root
   useEffect(() => {
@@ -46,7 +47,12 @@ export default function App() {
     toastTimer.current = setTimeout(() => setToast(null), 3500);
   };
 
-  const loadWindows = useCallback(async () => {
+  const loadWindows = useCallback(async (force?: boolean) => {
+    // Debounce: skip if last call was <500ms ago (prevents triple-fire on focus)
+    const now = Date.now();
+    if (!force && now - lastLoadTime.current < 500) return;
+    lastLoadTime.current = now;
+
     try {
       const [wins, admin, selfShielded] = await Promise.all([
         invoke<WindowInfo[]>("get_windows"),
@@ -104,7 +110,7 @@ export default function App() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadWindows();
+    await loadWindows(true);
     showToast("Application list refreshed", "info");
   };
 
@@ -188,7 +194,7 @@ export default function App() {
     if (toShield.length === 0) return;
 
     for (const win of toShield) {
-      handleToggle(win, true);
+      await handleToggle(win, true);
     }
   };
 
@@ -197,7 +203,7 @@ export default function App() {
     if (toUnshield.length === 0) return;
 
     for (const win of toUnshield) {
-      handleToggle(win, false);
+      await handleToggle(win, false);
     }
   };
 

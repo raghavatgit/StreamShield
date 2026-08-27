@@ -105,10 +105,11 @@ fn toggle_shield(exe_name: String, hwnd: usize, _pid: u32, enable: bool, state: 
     injector::set_window_affinity(hwnd, enable)?;
     {
         let mut config = state.config.lock().map_err(|e| e.to_string())?;
+        let normalized = exe_name.to_lowercase();
         if enable {
-            config.shielded_exes.insert(exe_name);
+            config.shielded_exes.insert(normalized);
         } else {
-            config.shielded_exes.remove(&exe_name);
+            config.shielded_exes.remove(&normalized);
         }
         save_config(&config);
     }
@@ -191,6 +192,7 @@ fn main() {
     }
 
     disable_power_throttling();
+    injector::cleanup_stale_dlls();
 
     tauri::Builder::default()
         .manage(AppState { config: Mutex::new(load_config()), tray_status: Mutex::new(None) })
@@ -269,7 +271,7 @@ fn main() {
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {
                 loop {
-                    std::thread::sleep(std::time::Duration::from_millis(2000));
+                    std::thread::sleep(std::time::Duration::from_millis(5000));
                     disable_power_throttling();
                     if let Some(state) = app_handle.try_state::<AppState>() {
                         let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();

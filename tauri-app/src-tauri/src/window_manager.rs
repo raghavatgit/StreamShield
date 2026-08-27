@@ -123,8 +123,12 @@ pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>) -> V
         // automatically inject and reapply the shield immediately!
         let should_be_shielded = shielded_exes.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
         if should_be_shielded && !is_shielded {
-            let _ = crate::injector::set_window_affinity(hwnd as usize, true);
-            is_shielded = query_live_affinity(hwnd as usize);
+            // Validate HWND is still alive before attempting injection
+            use winapi::um::winuser::IsWindow;
+            if unsafe { IsWindow(hwnd) } != 0 {
+                let _ = crate::injector::set_window_affinity(hwnd as usize, true);
+                is_shielded = query_live_affinity(hwnd as usize);
+            }
         }
 
         // Fetch icon (cached per exe to avoid redundant GDI calls)
@@ -174,7 +178,9 @@ pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>) {
 
         let should_shield = shielded_set.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
         if should_shield && !query_live_affinity(hwnd as usize) {
-            let _ = crate::injector::set_window_affinity(hwnd as usize, true);
+            if IsWindowVisible(hwnd) != 0 {
+                let _ = crate::injector::set_window_affinity(hwnd as usize, true);
+            }
         }
 
         1
@@ -186,14 +192,15 @@ pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>) {
     }
 }
 
-/// Query the true, ground-truth Display Affinity from Windows OS
+/// Query the true, ground-truth Display Affinity from Windows OS.
+/// Returns true if ANY non-zero affinity is set (catches both WDA_EXCLUDEFROMCAPTURE
+/// and WDA_MONITOR fallback on older Windows 10 builds).
 #[cfg(windows)]
 fn query_live_affinity(hwnd: usize) -> bool {
     use winapi::um::winuser::GetWindowDisplayAffinity;
-    const WDA_EXCLUDEFROMCAPTURE: u32 = 0x00000011;
     let mut affinity: u32 = 0;
     let ok = unsafe { GetWindowDisplayAffinity(hwnd as _, &mut affinity) };
-    ok != 0 && affinity == WDA_EXCLUDEFROMCAPTURE
+    ok != 0 && affinity != 0
 }
 
 #[cfg(windows)]

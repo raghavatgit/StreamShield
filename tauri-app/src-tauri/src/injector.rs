@@ -5,6 +5,23 @@ use std::ptr::null_mut;
 
 const DLL_BYTES: &[u8] = include_bytes!("shield_dll.dll");
 
+/// Clean up any stale DLL temp files from previous sessions
+pub fn cleanup_stale_dlls() {
+    let our_name_prefix = "streamshield_hook_";
+    if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with(our_name_prefix) && name.ends_with(".dll") {
+                // Don't delete our own current session's DLL
+                let our_dll = format!("streamshield_hook_{}.dll", std::process::id());
+                if name != our_dll {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+}
+
 /// RAII wrapper to guarantee handle closure across all error paths
 struct AutoCloseHandle(winapi::um::winnt::HANDLE);
 
@@ -87,13 +104,14 @@ fn get_remote_module_base(pid: u32, dll_filename: &str) -> Option<usize> {
         CreateToolhelp32Snapshot, Module32FirstW, Module32NextW,
         MODULEENTRY32W, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32,
     };
-    use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
+    use winapi::um::handleapi::INVALID_HANDLE_VALUE;
 
     unsafe {
         let snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
         if snap == INVALID_HANDLE_VALUE {
             return None;
         }
+        let _snap_guard = AutoCloseHandle(snap);
 
         let mut me: MODULEENTRY32W = std::mem::zeroed();
         me.dwSize = std::mem::size_of::<MODULEENTRY32W>() as u32;
@@ -112,7 +130,6 @@ fn get_remote_module_base(pid: u32, dll_filename: &str) -> Option<usize> {
                 }
             }
         }
-        CloseHandle(snap);
         found
     }
 }
@@ -164,12 +181,15 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool) -> Result<(), String> 
         }
 
         let mut written = 0usize;
-        WriteProcessMemory(proc_handle, remote_path, dll_cstr.as_ptr() as _, path_len, &mut written);
+        let wpm_ok = WriteProcessMemory(proc_handle, remote_path, dll_cstr.as_ptr() as _, path_len, &mut written);
+        if wpm_ok == 0 || written != path_len {
+            VirtualFreeEx(proc_handle, remote_path, 0, MEM_RELEASE);
+            return Err(format!("WriteProcessMemory failed: {} (wrote {}/{})", last_os_error(), written, path_len));
+        }
 
         // kernel32 maps at the same VA in every process (shared section, no ASLR between procs)
         let k32 = LoadLibraryA(b"kernel32.dll\0".as_ptr() as _);
         let load_lib = GetProcAddress(k32, b"LoadLibraryA\0".as_ptr() as _);
-        FreeLibrary(k32);
 
         // Inject DLL into target process
         let t1 = CreateRemoteThread(proc_handle, null_mut(), 0,
