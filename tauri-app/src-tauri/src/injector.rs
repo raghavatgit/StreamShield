@@ -62,13 +62,21 @@ fn get_window_pid(hwnd: usize) -> Result<u32, String> {
 fn set_affinity_direct(hwnd: usize, enable: bool) -> Result<(), String> {
     use winapi::shared::windef::HWND;
     use winapi::um::winuser::{
-        SetWindowDisplayAffinity, SetWindowPos, RedrawWindow,
+        GetWindowDisplayAffinity, SetWindowDisplayAffinity, SetWindowPos, RedrawWindow,
         SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_NOACTIVATE, SWP_FRAMECHANGED,
         RDW_INVALIDATE, RDW_ERASE, RDW_FRAME, RDW_ALLCHILDREN, RDW_UPDATENOW,
     };
     const WDA_NONE: u32 = 0x00000000;
     const WDA_EXCLUDEFROMCAPTURE: u32 = 0x00000011;
     const WDA_MONITOR: u32 = 0x00000001;
+
+    // Check current affinity — skip if already at desired value
+    let mut current: u32 = 0;
+    let got = unsafe { GetWindowDisplayAffinity(hwnd as _, &mut current) };
+    if got != 0 {
+        if enable && current != 0 { return Ok(()); }  // Already shielded
+        if !enable && current == 0 { return Ok(()); }  // Already unshielded
+    }
 
     let affinity = if enable { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE };
     let mut ok = unsafe { SetWindowDisplayAffinity(hwnd as _, affinity) };
