@@ -11,6 +11,8 @@ fn default_theme() -> String { "cyberpunk".to_string() }
 fn default_compact_mode() -> bool { false }
 fn default_show_pid() -> bool { true }
 fn default_confirm_batch() -> bool { false }
+fn default_mpo_fix() -> bool { false }
+fn default_self_stealth() -> bool { false }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -32,6 +34,10 @@ pub struct AppSettings {
     pub show_pid: bool,
     #[serde(default = "default_confirm_batch")]
     pub confirm_batch: bool,
+    #[serde(default = "default_mpo_fix")]
+    pub mpo_fix: bool,
+    #[serde(default = "default_self_stealth")]
+    pub self_stealth: bool,
 }
 
 impl Default for AppSettings {
@@ -46,6 +52,8 @@ impl Default for AppSettings {
             compact_mode: default_compact_mode(),
             show_pid: default_show_pid(),
             confirm_batch: default_confirm_batch(),
+            mpo_fix: default_mpo_fix(),
+            self_stealth: default_self_stealth(),
         }
     }
 }

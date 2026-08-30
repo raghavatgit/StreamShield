@@ -47,6 +47,8 @@ export default function App() {
     compact_mode: false,
     show_pid: true,
     confirm_batch: false,
+    mpo_fix: false,
+    self_stealth: false,
   });
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -81,6 +83,10 @@ export default function App() {
       setSettings(s);
       if (s.theme) {
         setTheme(s.theme as ThemeType);
+      }
+      if (s.self_stealth !== undefined) {
+        await invoke("toggle_self_shield", { enable: s.self_stealth }).catch(() => {});
+        setIsSelfShielded(s.self_stealth);
       }
     } catch (e) {
       console.error("Failed to load settings:", e);
@@ -249,6 +255,7 @@ export default function App() {
     try {
       await invoke<boolean>("toggle_self_shield", { enable: next });
       setIsSelfShielded(next);
+      handleUpdateSettings({ ...settings, self_stealth: next });
       showToast(
         next
           ? "StreamShield app is now hidden from streams"

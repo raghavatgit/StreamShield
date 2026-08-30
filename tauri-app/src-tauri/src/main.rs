@@ -238,13 +238,105 @@ fn reapply_shields(state: State<AppState>) -> Vec<String> {
     res
 }
 
+#[cfg(windows)]
+fn set_mpo_fix_registry(enable: bool) -> Result<(), String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::um::winreg::{RegOpenKeyExW, RegSetValueExW, RegDeleteValueW, RegCloseKey, HKEY_LOCAL_MACHINE};
+    use winapi::um::winnt::{KEY_SET_VALUE, REG_DWORD};
+    
+    fn wide(s: &str) -> Vec<u16> { OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect() }
+    
+    let subkey = wide(r"SOFTWARE\Microsoft\Windows\Dwm");
+    let val_name = wide("OverlayTestMode");
+    
+    unsafe {
+        let mut hkey = std::ptr::null_mut();
+        let status = RegOpenKeyExW(HKEY_LOCAL_MACHINE, subkey.as_ptr(), 0, KEY_SET_VALUE, &mut hkey);
+        if status != 0 {
+            return Err(format!("RegOpenKeyExW (HKLM) failed (error code {}). Administrator privileges required to change MPO settings.", status));
+        }
+        
+        let res = if enable {
+            let data: u32 = 5; // 5 = disable hardware MPO overlay plane bypass
+            let set_res = RegSetValueExW(
+                hkey,
+                val_name.as_ptr(),
+                0,
+                REG_DWORD,
+                &data as *const u32 as *const _,
+                std::mem::size_of::<u32>() as u32,
+            );
+            if set_res != 0 {
+                Err(format!("RegSetValueExW failed with error: {}", set_res))
+            } else {
+                Ok(())
+            }
+        } else {
+            let del_res = RegDeleteValueW(hkey, val_name.as_ptr());
+            if del_res != 0 && del_res != 2 {
+                Err(format!("RegDeleteValueW failed with error: {}", del_res))
+            } else {
+                Ok(())
+            }
+        };
+        
+        RegCloseKey(hkey);
+        res
+    }
+}
+
+#[cfg(not(windows))]
+fn set_mpo_fix_registry(_enable: bool) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(windows)]
+fn get_mpo_fix_registry() -> bool {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::um::winreg::{RegOpenKeyExW, RegQueryValueExW, RegCloseKey, HKEY_LOCAL_MACHINE};
+    use winapi::um::winnt::KEY_QUERY_VALUE;
+    
+    fn wide(s: &str) -> Vec<u16> { OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect() }
+    
+    let subkey = wide(r"SOFTWARE\Microsoft\Windows\Dwm");
+    let val_name = wide("OverlayTestMode");
+    
+    unsafe {
+        let mut hkey = std::ptr::null_mut();
+        if RegOpenKeyExW(HKEY_LOCAL_MACHINE, subkey.as_ptr(), 0, KEY_QUERY_VALUE, &mut hkey) != 0 {
+            return false;
+        }
+        let mut data_type = 0u32;
+        let mut data: u32 = 0;
+        let mut data_len = std::mem::size_of::<u32>() as u32;
+        let query_res = RegQueryValueExW(
+            hkey,
+            val_name.as_ptr(),
+            std::ptr::null_mut(),
+            &mut data_type,
+            &mut data as *mut u32 as *mut _,
+            &mut data_len,
+        );
+        RegCloseKey(hkey);
+        query_res == 0 && data == 5
+    }
+}
+
+#[cfg(not(windows))]
+fn get_mpo_fix_registry() -> bool {
+    false
+}
+
 #[tauri::command]
 fn get_settings(state: State<AppState>) -> AppSettings {
     let mut settings = state.config.lock().map(|c| c.settings.clone()).unwrap_or_default();
-    // Synchronize autostart with true Windows Registry state
+    // Synchronize autostart and MPO fix with true Windows Registry state
     #[cfg(windows)]
     {
         settings.autostart = get_autostart_registry();
+        settings.mpo_fix = get_mpo_fix_registry();
     }
     settings
 }
@@ -256,6 +348,11 @@ fn update_settings(settings: AppSettings, state: State<AppState>) -> Result<AppS
         let current_autostart = get_autostart_registry();
         if settings.autostart != current_autostart {
             let _ = set_autostart_registry(settings.autostart);
+        }
+
+        let current_mpo = get_mpo_fix_registry();
+        if settings.mpo_fix != current_mpo {
+            let _ = set_mpo_fix_registry(settings.mpo_fix);
         }
     }
 
@@ -275,6 +372,7 @@ fn reset_settings(state: State<AppState>) -> Result<AppSettings, String> {
     #[cfg(windows)]
     {
         let _ = set_autostart_registry(false);
+        let _ = set_mpo_fix_registry(false);
     }
 
     {

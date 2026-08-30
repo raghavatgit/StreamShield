@@ -23,6 +23,8 @@ export interface AppSettings {
   compact_mode: boolean;
   show_pid: boolean;
   confirm_batch: boolean;
+  mpo_fix: boolean;
+  self_stealth: boolean;
 }
 
 interface ThemeChoice {
@@ -203,6 +205,26 @@ export default function SettingsModal({
                 </label>
               </div>
 
+              <div className="setting-row-item">
+                <div className="setting-meta">
+                  <span className="setting-label">Shield StreamShield on Launch (App Stealth)</span>
+                  <span className="setting-subtext">
+                    Hides the StreamShield application window from all screen captures on startup
+                  </span>
+                </div>
+                <label className="toggle-control">
+                  <input
+                    type="checkbox"
+                    checked={settings.self_stealth}
+                    onChange={(e) => handleToggle("self_stealth", e.target.checked)}
+                    disabled={saving}
+                  />
+                  <span className="toggle-rail">
+                    <span className="toggle-knob" />
+                  </span>
+                </label>
+              </div>
+
               <div className="settings-callout-box info">
                 <IconInfo size={16} className="callout-svg" />
                 <span className="callout-text">
@@ -266,6 +288,26 @@ export default function SettingsModal({
                     type="checkbox"
                     checked={settings.auto_reapply}
                     onChange={(e) => handleToggle("auto_reapply", e.target.checked)}
+                    disabled={saving}
+                  />
+                  <span className="toggle-rail">
+                    <span className="toggle-knob" />
+                  </span>
+                </label>
+              </div>
+
+              <div className="setting-row-item">
+                <div className="setting-meta">
+                  <span className="setting-label">NVIDIA ShadowPlay & Overlay Plane Compatibility</span>
+                  <span className="setting-subtext">
+                    Forces Windows DWM compositing (disables hardware MPO overlay plane bypass) so NVIDIA ShadowPlay & Instant Replay consistently mask shielded applications
+                  </span>
+                </div>
+                <label className="toggle-control">
+                  <input
+                    type="checkbox"
+                    checked={settings.mpo_fix}
+                    onChange={(e) => handleToggle("mpo_fix", e.target.checked)}
                     disabled={saving}
                   />
                   <span className="toggle-rail">
