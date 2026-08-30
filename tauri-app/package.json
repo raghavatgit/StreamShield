@@ -1,6 +1,7 @@
 {
   "name": "streamshield",
-  "version": "0.1.2",
+  "version": "0.2.0",
+  "author": "Raghav Goyal",
   "private": true,
   "type": "module",
   "scripts": {

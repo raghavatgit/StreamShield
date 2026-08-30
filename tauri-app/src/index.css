@@ -1191,8 +1191,17 @@ html, body, #root {
   gap: 12px;
 }
 
-.settings-header-glyph {
-  font-size: 20px;
+.settings-header-glyph-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  box-shadow: 0 0 10px var(--glow-accent);
 }
 
 .settings-title-text {
@@ -1219,6 +1228,9 @@ html, body, #root {
   border-radius: 6px;
   transition: all 0.15s ease;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .settings-close-cross:hover {
@@ -1226,27 +1238,39 @@ html, body, #root {
   color: var(--text-primary);
 }
 
-/* Nav Tabs */
+/* Nav Tabs - Modern Segmented Strip (No ugly scrollbars) */
 .settings-nav-strip {
-  display: flex;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
   padding: 8px 14px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-card);
-  overflow-x: auto;
+  overflow: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.settings-nav-strip::-webkit-scrollbar {
+  display: none;
 }
 
 .settings-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
-  padding: 6px 10px;
-  border-radius: 6px;
+  padding: 7px 6px;
+  border-radius: 7px;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s ease;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: center;
 }
 
 .settings-nav-btn:hover {
@@ -1258,7 +1282,14 @@ html, body, #root {
   background: var(--bg-surface);
   border-color: var(--border-card);
   color: var(--primary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), 0 0 10px var(--glow-accent);
+}
+
+.settings-nav-btn .nav-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 /* Modal Body */
@@ -1640,6 +1671,46 @@ html, body, #root {
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
+}
+
+.callout-svg {
+  color: var(--primary);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.confirm-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.confirm-alert-icon {
+  color: #ff007f;
+  flex-shrink: 0;
+}
+
+.empty-glyph-box {
+  width: 68px;
+  height: 68px;
+  border-radius: 18px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.empty-glyph-svg {
+  color: var(--primary);
+  opacity: 0.8;
+}
+
+.toast-symbol svg {
+  display: block;
 }
 
 .confirm-cancel-btn:hover {

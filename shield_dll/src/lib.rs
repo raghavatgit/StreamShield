@@ -1,4 +1,4 @@
-//! Shield DLL — injected into target processes to call SetWindowDisplayAffinity.
+//! Shield DLL - injected into target processes to call SetWindowDisplayAffinity.
 //! shield_window is called as a thread entry point via CreateRemoteThread,
 //! so it MUST match LPTHREAD_START_ROUTINE: fn(LPVOID) -> DWORD.
 
@@ -21,7 +21,7 @@ mod imp {
 
     /// Apply display affinity to a window. Only force-redraws if affinity actually changed.
     unsafe fn apply_affinity_to_hwnd(hwnd: HWND, affinity: u32, enable: bool) -> u32 {
-        // Check current affinity first — skip if already at desired value
+        // Check current affinity first - skip if already at desired value
         let mut current: u32 = 0;
         if GetWindowDisplayAffinity(hwnd, &mut current) != 0 {
             if enable && current != 0 {
@@ -56,7 +56,7 @@ mod imp {
     }
 
     unsafe extern "system" fn enum_all_process_windows(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        // CRITICAL: Only process visible windows — hidden/internal windows must not be
+        // CRITICAL: Only process visible windows - hidden/internal windows must not be
         // force-redrawn or they manifest as blank white ghost rectangles on screen.
         if IsWindowVisible(hwnd) == 0 {
             return 1;

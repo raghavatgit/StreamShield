@@ -1,7 +1,9 @@
 [package]
 name = "streamshield"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
+authors = ["Raghav Goyal"]
+description = "Stream Privacy Manager"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

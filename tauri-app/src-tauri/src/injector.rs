@@ -72,7 +72,7 @@ fn set_affinity_direct(hwnd: usize, enable: bool, shield_mode: Option<&str>) -> 
 
     let prefer_monitor = shield_mode.map(|m| m.eq_ignore_ascii_case("monitor")).unwrap_or(false);
 
-    // Check current affinity — skip if already at desired value
+    // Check current affinity - skip if already at desired value
     let mut current: u32 = 0;
     let got = unsafe { GetWindowDisplayAffinity(hwnd as _, &mut current) };
     if got != 0 {
@@ -116,7 +116,7 @@ fn set_affinity_direct(hwnd: usize, enable: bool, shield_mode: Option<&str>) -> 
 }
 
 /// Get the real 64-bit base address of a module in the remote process.
-/// Uses CreateToolhelp32Snapshot — safe on both 32-bit and 64-bit Windows.
+/// Uses CreateToolhelp32Snapshot - safe on both 32-bit and 64-bit Windows.
 #[cfg(windows)]
 fn get_remote_module_base(pid: u32, dll_filename: &str) -> Option<usize> {
     use winapi::um::tlhelp32::{

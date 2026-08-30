@@ -4,6 +4,17 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import AppRow, { WindowInfo } from "./components/AppRow";
 import SettingsModal, { AppSettings } from "./components/SettingsModal";
+import {
+  IconGear,
+  IconRefresh,
+  IconSearch,
+  IconClose,
+  IconCheck,
+  IconInfo,
+  IconAlert,
+  IconShield,
+  IconExternalLink,
+} from "./components/Icons";
 
 export type ThemeType = "discord" | "cyberpunk" | "neumorphic-white";
 
@@ -369,14 +380,14 @@ export default function App() {
               onClick={() => setSettingsOpen(true)}
               title="Open StreamShield Preferences"
             >
-              ⚙️
+              <IconGear size={16} />
             </button>
           </div>
         </div>
 
         {!isAdmin && (
           <div className="admin-status-banner">
-            <span className="banner-icon">⚠️</span>
+            <IconAlert size={14} className="banner-icon" />
             <span>Administrator permissions recommended for full process capture exclusion</span>
           </div>
         )}
@@ -414,7 +425,7 @@ export default function App() {
               onClick={handleRefresh}
               title="Refresh window list"
             >
-              ↻
+              <IconRefresh size={14} />
             </button>
           </div>
         </div>
@@ -423,7 +434,7 @@ export default function App() {
       {/* Search & Navigation Bar */}
       <section className="search-filter-section">
         <div className="search-input-shell">
-          <span className="search-input-icon">🔍</span>
+          <IconSearch size={14} className="search-input-icon" />
           <input
             className="search-text-input"
             type="text"
@@ -433,7 +444,7 @@ export default function App() {
           />
           {search && (
             <button className="search-clear-cross" onClick={() => setSearch("")}>
-              ✕
+              <IconClose size={12} />
             </button>
           )}
         </div>
@@ -470,7 +481,9 @@ export default function App() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="empty-results-view">
-            <div className="empty-glyph">🛡️</div>
+            <div className="empty-glyph-box">
+              <IconShield size={38} className="empty-glyph-svg" />
+            </div>
             <div className="empty-title-text">No Applications Found</div>
             <div className="empty-subtitle-text">
               {search
@@ -527,7 +540,7 @@ export default function App() {
             title="Minimize StreamShield to system tray"
           >
             <span>Tray</span>
-            <span className="dock-arrow">↗</span>
+            <IconExternalLink size={12} className="dock-arrow" />
           </button>
         </div>
       </footer>
@@ -549,9 +562,12 @@ export default function App() {
       {batchConfirmState && (
         <div className="settings-confirm-overlay" onClick={() => setBatchConfirmState(null)}>
           <div className="settings-confirm-card" onClick={(e) => e.stopPropagation()}>
-            <h3 className="confirm-title">
-              {batchConfirmState === "shield_all" ? "Protect all applications?" : "Unshield all applications?"}
-            </h3>
+            <div className="confirm-icon-row">
+              <IconAlert size={20} className="confirm-alert-icon" />
+              <h3 className="confirm-title">
+                {batchConfirmState === "shield_all" ? "Protect all applications?" : "Unshield all applications?"}
+              </h3>
+            </div>
             <p className="confirm-text">
               {batchConfirmState === "shield_all"
                 ? `This will apply capture protection to all ${windows.length} active window(s).`
@@ -583,7 +599,7 @@ export default function App() {
       {toast && (
         <div className={`floating-toast ${toast.type || "error"}`}>
           <span className="toast-symbol">
-            {toast.type === "success" ? "✓" : toast.type === "info" ? "ℹ" : "⚠️"}
+            {toast.type === "success" ? <IconCheck size={13} /> : toast.type === "info" ? <IconInfo size={13} /> : <IconAlert size={13} />}
           </span>
           <span className="toast-message-body">{toast.message}</span>
         </div>

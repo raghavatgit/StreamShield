@@ -1,5 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { ThemeType } from "../App";
+import {
+  IconGear,
+  IconStartup,
+  IconShield,
+  IconScanning,
+  IconDisplay,
+  IconTools,
+  IconInfo,
+  IconAlert,
+  IconClose,
+  IconCheck,
+} from "./Icons";
 
 export interface AppSettings {
   autostart: boolean;
@@ -94,14 +106,16 @@ export default function SettingsModal({
         {/* Header */}
         <div className="settings-modal-header">
           <div className="settings-header-title-group">
-            <span className="settings-header-glyph">⚙️</span>
+            <div className="settings-header-glyph-box">
+              <IconGear size={18} className="settings-header-glyph" />
+            </div>
             <div>
               <h2 className="settings-title-text">StreamShield Preferences</h2>
-              <p className="settings-subtitle-text">Tune engine parameters, startup behavior & aesthetics</p>
+              <p className="settings-subtitle-text">Engine configuration, startup behavior & aesthetics</p>
             </div>
           </div>
           <button className="settings-close-cross" onClick={onClose} title="Close (Esc)">
-            ✕
+            <IconClose size={16} />
           </button>
         </div>
 
@@ -111,31 +125,36 @@ export default function SettingsModal({
             className={`settings-nav-btn ${activeTab === "system" ? "is-active" : ""}`}
             onClick={() => setActiveTab("system")}
           >
-            🚀 Startup
+            <IconStartup size={14} className="nav-btn-icon" />
+            <span>Startup</span>
           </button>
           <button
             className={`settings-nav-btn ${activeTab === "shield" ? "is-active" : ""}`}
             onClick={() => setActiveTab("shield")}
           >
-            🛡️ Privacy Engine
+            <IconShield size={14} className="nav-btn-icon" />
+            <span>Engine</span>
           </button>
           <button
             className={`settings-nav-btn ${activeTab === "performance" ? "is-active" : ""}`}
             onClick={() => setActiveTab("performance")}
           >
-            ⚡ Scanning
+            <IconScanning size={14} className="nav-btn-icon" />
+            <span>Scanning</span>
           </button>
           <button
             className={`settings-nav-btn ${activeTab === "ui" ? "is-active" : ""}`}
             onClick={() => setActiveTab("ui")}
           >
-            🎨 Display & UI
+            <IconDisplay size={14} className="nav-btn-icon" />
+            <span>Display</span>
           </button>
           <button
             className={`settings-nav-btn ${activeTab === "maintenance" ? "is-active" : ""}`}
             onClick={() => setActiveTab("maintenance")}
           >
-            ⚙️ Maintenance
+            <IconTools size={14} className="nav-btn-icon" />
+            <span>Tools</span>
           </button>
         </div>
 
@@ -185,7 +204,7 @@ export default function SettingsModal({
               </div>
 
               <div className="settings-callout-box info">
-                <span className="callout-icon">💡</span>
+                <IconInfo size={16} className="callout-svg" />
                 <span className="callout-text">
                   StreamShield runs with elevated Administrator privileges for hardware capture hook stability.
                 </span>
@@ -211,7 +230,7 @@ export default function SettingsModal({
                   >
                     <div className="shield-mode-card-header">
                       <span className="mode-tag">Invisible / Transparent</span>
-                      {settings.shield_mode === "exclude" && <span className="mode-check">✓</span>}
+                      {settings.shield_mode === "exclude" && <IconCheck size={14} className="mode-check" />}
                     </div>
                     <div className="shield-mode-title">Exclude from Capture</div>
                     <div className="shield-mode-desc">
@@ -225,7 +244,7 @@ export default function SettingsModal({
                   >
                     <div className="shield-mode-card-header">
                       <span className="mode-tag">Black Out Mask</span>
-                      {settings.shield_mode === "monitor" && <span className="mode-check">✓</span>}
+                      {settings.shield_mode === "monitor" && <IconCheck size={14} className="mode-check" />}
                     </div>
                     <div className="shield-mode-title">Black Screen Mask</div>
                     <div className="shield-mode-desc">
@@ -285,7 +304,7 @@ export default function SettingsModal({
               </div>
 
               <div className="settings-callout-box info">
-                <span className="callout-icon">⚡</span>
+                <IconInfo size={16} className="callout-svg" />
                 <span className="callout-text">
                   StreamShield uses native Win32 window event debouncing to minimize CPU and power consumption.
                 </span>
@@ -416,15 +435,19 @@ export default function SettingsModal({
 
               <div className="app-diagnostics-footer">
                 <div className="diag-row">
+                  <span className="diag-key">Publisher:</span>
+                  <span className="diag-val">Raghav Goyal</span>
+                </div>
+                <div className="diag-row">
                   <span className="diag-key">Version:</span>
-                  <span className="diag-val">v0.1.2</span>
+                  <span className="diag-val">v0.2.0</span>
                 </div>
                 <div className="diag-row">
                   <span className="diag-key">Privileges:</span>
-                  <span className="diag-val">{isAdmin ? "Administrator (Elevated)" : "Standard User"}</span>
+                  <span className="diag-val">{isAdmin ? "Administrator" : "Standard"}</span>
                 </div>
                 <div className="diag-row">
-                  <span className="diag-key">Active Windows:</span>
+                  <span className="diag-key">Windows:</span>
                   <span className="diag-val">{totalWindows} detected</span>
                 </div>
               </div>
@@ -436,7 +459,10 @@ export default function SettingsModal({
         {confirmClearOpen && (
           <div className="settings-confirm-overlay" onClick={() => setConfirmClearOpen(false)}>
             <div className="settings-confirm-card" onClick={(e) => e.stopPropagation()}>
-              <h3 className="confirm-title">Clear all shielded apps?</h3>
+              <div className="confirm-icon-row">
+                <IconAlert size={22} className="confirm-alert-icon" />
+                <h3 className="confirm-title">Clear all shielded apps?</h3>
+              </div>
               <p className="confirm-text">
                 This will unshield all {shieldedCount} protected application windows, making them visible to all screen captures.
               </p>
@@ -461,7 +487,10 @@ export default function SettingsModal({
         {confirmResetOpen && (
           <div className="settings-confirm-overlay" onClick={() => setConfirmResetOpen(false)}>
             <div className="settings-confirm-card" onClick={(e) => e.stopPropagation()}>
-              <h3 className="confirm-title">Reset all settings to default?</h3>
+              <div className="confirm-icon-row">
+                <IconAlert size={22} className="confirm-alert-icon" />
+                <h3 className="confirm-title">Reset all settings to default?</h3>
+              </div>
               <p className="confirm-text">
                 This will restore all preferences (startup, theme, scan interval, shield mode) to their initial values.
               </p>

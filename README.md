@@ -4,7 +4,7 @@
 
 **Per-Application Stream Privacy Manager for Windows**
 
-*Hide private applications (Discord, WhatsApp, Spotify, Chrome, Banking, IDEs) from your live streams, screen shares, and recordings with a single toggle — while keeping them 100% visible on your monitor.*
+*Hide private applications (Discord, WhatsApp, Spotify, Chrome, Banking, IDEs) from your live streams, screen shares, and recordings with a single toggle - while keeping them 100% visible on your monitor.*
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?style=for-the-badge&logo=windows)](https://github.com/raghavatgit/StreamShield)
 [![Rust](https://img.shields.io/badge/Backend-Rust%202021-DEA584?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
@@ -76,7 +76,7 @@
 
 ### Option 1: Standalone Portable Binary (Recommended)
 Download **`streamshield.exe`** from the [Latest Releases](https://github.com/raghavatgit/StreamShield/releases) page.
-- **No installation needed** — simply double-click and run!
+- **No installation needed** - simply double-click and run!
 
 ### Option 2: Windows Installer
 Download **`StreamShield-setup.exe`** for a standard Windows installation with Desktop and Start Menu shortcuts.

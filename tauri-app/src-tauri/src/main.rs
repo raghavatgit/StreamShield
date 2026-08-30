@@ -1,4 +1,4 @@
-// Always hide console window — no terminal alongside the app
+// Always hide console window - no terminal alongside the app
 #![windows_subsystem = "windows"]
 
 mod window_manager;
@@ -415,7 +415,7 @@ fn main() {
 
             TrayIconBuilder::with_id("main")
                 .icon(icon)
-                .tooltip("StreamShield — Stream Privacy Manager")
+                .tooltip("StreamShield - Stream Privacy Manager")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 // Left click: toggle window

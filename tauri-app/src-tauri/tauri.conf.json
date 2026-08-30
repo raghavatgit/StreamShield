@@ -1,6 +1,6 @@
 {
   "productName": "StreamShield",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "identifier": "com.streamshield",
   "build": {
     "frontendDist": "../dist",
@@ -29,6 +29,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Raghav Goyal",
+    "copyright": "Copyright © 2026 Raghav Goyal. All rights reserved.",
+    "shortDescription": "Stream Privacy Manager",
+    "longDescription": "Selectively shield individual application windows from stream and OBS capture.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
