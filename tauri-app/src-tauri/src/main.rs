@@ -4,6 +4,7 @@
 mod window_manager;
 mod injector;
 mod config;
+mod nvidia_bypass;
 
 use std::sync::Mutex;
 use tauri::{
@@ -457,6 +458,16 @@ fn is_self_shielded(window: WebviewWindow) -> bool {
     false
 }
 
+#[tauri::command]
+fn apply_nvidia_bypass() -> Result<usize, String> {
+    #[cfg(windows)]
+    {
+        Ok(nvidia_bypass::patch_nvidia_processes())
+    }
+    #[cfg(not(windows))]
+    Ok(0)
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 fn main() {
@@ -476,7 +487,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_windows, toggle_shield, get_shielded_exes, reapply_shields,
             get_settings, update_settings, reset_settings, clear_all_shields,
-            check_admin, hide_to_tray, toggle_self_shield, is_self_shielded
+            check_admin, hide_to_tray, toggle_self_shield, is_self_shielded,
+            apply_nvidia_bypass
         ])
         .setup(move |app| {
             // ── Show main window (unless started with --minimized or start_minimized is on) ──
@@ -568,6 +580,10 @@ fn main() {
                         
                         if auto_reapply && !shielded.is_empty() {
                             window_manager::auto_reapply_shields(&shielded, &mode);
+                            #[cfg(windows)]
+                            {
+                                nvidia_bypass::patch_nvidia_processes();
+                            }
                         }
                         update_tray_status(&state);
                     }

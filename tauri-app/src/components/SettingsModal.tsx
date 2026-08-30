@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { ThemeType } from "../App";
 import {
   IconGear,
@@ -74,6 +75,8 @@ export default function SettingsModal({
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [patchingNvidia, setPatchingNvidia] = useState(false);
+  const [nvidiaPatchResult, setNvidiaPatchResult] = useState<string | null>(null);
 
   // Close on Escape
   useEffect(() => {
@@ -314,6 +317,38 @@ export default function SettingsModal({
                     <span className="toggle-knob" />
                   </span>
                 </label>
+              </div>
+
+              <div className="setting-row-item">
+                <div className="setting-meta">
+                  <span className="setting-label">Live NVIDIA DRM Scanner Bypass</span>
+                  <span className="setting-subtext">
+                    Live-patches NVIDIA capture processes (nvcontainer & NVIDIA Share) to disable DRM killswitches and allow screen recording with private apps hidden
+                  </span>
+                  {nvidiaPatchResult && (
+                    <span className="setting-subtext" style={{ color: "var(--accent-cyan, #00f0ff)", marginTop: "4px", fontWeight: 600 }}>
+                      {nvidiaPatchResult}
+                    </span>
+                  )}
+                </div>
+                <button
+                  className="settings-action-btn secondary"
+                  onClick={async () => {
+                    setPatchingNvidia(true);
+                    try {
+                      const count = await invoke<number>("apply_nvidia_bypass");
+                      setNvidiaPatchResult(`Successfully patched ${count} NVIDIA capture process${count === 1 ? "" : "es"}`);
+                    } catch (e) {
+                      setNvidiaPatchResult(`Error: ${e}`);
+                    } finally {
+                      setPatchingNvidia(false);
+                    }
+                  }}
+                  disabled={patchingNvidia}
+                  style={{ minWidth: "150px" }}
+                >
+                  {patchingNvidia ? "Patching..." : "Bypass NVIDIA Now"}
+                </button>
               </div>
             </div>
           )}
