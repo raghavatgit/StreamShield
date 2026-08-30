@@ -1077,3 +1077,608 @@ html, body, #root {
   color: #b45309;
 }
 
+/* ==========================================================================
+   SETTINGS BUTTON & COMPACT MODE
+   ========================================================================== */
+
+.settings-gear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-card);
+  color: var(--text-primary);
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.settings-gear-btn:hover {
+  border-color: var(--border-active);
+  box-shadow: 0 0 12px var(--glow-accent);
+  transform: rotate(30deg) scale(1.05);
+}
+
+.app-card.is-compact {
+  padding: 6px 12px;
+  min-height: 48px;
+  gap: 10px;
+}
+
+.app-card.is-compact .app-icon-slot {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+}
+
+.app-card.is-compact .app-native-icon,
+.app-card.is-compact .app-fallback-avatar {
+  width: 26px;
+  height: 26px;
+  font-size: 11px;
+}
+
+.app-card.is-compact .app-name-label {
+  font-size: 12px;
+}
+
+.app-card.is-compact .app-window-caption {
+  font-size: 10px;
+  max-width: 260px;
+}
+
+.app-card.is-compact .toggle-control {
+  transform: scale(0.85);
+  transform-origin: right center;
+}
+
+/* ==========================================================================
+   SETTINGS MODAL & PREFERENCES UI
+   ========================================================================== */
+
+.settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.settings-modal-card {
+  width: 100%;
+  max-width: 520px;
+  max-height: 85vh;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-card);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 24px var(--glow-accent);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalSlideUp {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.settings-modal-header {
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-card);
+  background: var(--bg-secondary);
+}
+
+.settings-header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-header-glyph {
+  font-size: 20px;
+}
+
+.settings-title-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.settings-subtitle-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 2px 0 0 0;
+}
+
+.settings-close-cross {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.settings-close-cross:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+/* Nav Tabs */
+.settings-nav-strip {
+  display: flex;
+  gap: 4px;
+  padding: 8px 14px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-card);
+  overflow-x: auto;
+}
+
+.settings-nav-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.settings-nav-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.settings-nav-btn.is-active {
+  background: var(--bg-surface);
+  border-color: var(--border-card);
+  color: var(--primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Modal Body */
+.settings-modal-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-section-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.setting-row-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-card);
+  border-radius: 10px;
+}
+
+.setting-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.setting-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.setting-subtext {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.setting-stacked-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-card);
+  border-radius: 10px;
+}
+
+/* Shield Mode Cards */
+.shield-mode-options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.shield-mode-card {
+  padding: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shield-mode-card:hover {
+  border-color: var(--border-active);
+  transform: translateY(-1px);
+}
+
+.shield-mode-card.is-selected {
+  border-color: var(--primary);
+  background: rgba(0, 240, 255, 0.04);
+  box-shadow: 0 0 14px var(--glow-accent);
+}
+
+.shield-mode-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mode-tag {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+
+.shield-mode-card.is-selected .mode-tag {
+  background: var(--primary);
+  color: var(--bg-app);
+}
+
+.mode-check {
+  color: var(--primary);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.shield-mode-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.shield-mode-desc {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+/* Theme Selection Cards */
+.theme-selection-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.theme-palette-card {
+  padding: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.theme-palette-card:hover {
+  border-color: var(--border-active);
+  transform: translateY(-1px);
+}
+
+.theme-palette-card.is-selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 12px var(--glow-accent);
+}
+
+.theme-preview-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.theme-preview-dots span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.theme-card-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.theme-card-badge {
+  font-size: 8.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--primary);
+  background: rgba(0, 240, 255, 0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* Select Input */
+.settings-select-input {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 10px;
+  outline: none;
+  cursor: pointer;
+}
+
+.settings-select-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 8px var(--glow-accent);
+}
+
+/* Callout Box */
+.settings-callout-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.settings-callout-box.info {
+  background: rgba(0, 240, 255, 0.05);
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  color: var(--text-secondary);
+}
+
+/* Maintenance Action Cards */
+.maintenance-action-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-card);
+  border-radius: 10px;
+}
+
+.maintenance-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.maintenance-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.maintenance-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.danger-outline-btn {
+  background: transparent;
+  border: 1px solid #ff007f;
+  color: #ff007f;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.danger-outline-btn:hover:not(:disabled) {
+  background: #ff007f;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 0, 127, 0.4);
+}
+
+.danger-outline-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.warning-outline-btn {
+  background: transparent;
+  border: 1px solid var(--border-card);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.warning-outline-btn:hover {
+  border-color: var(--border-active);
+  color: var(--primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Diagnostics Footer */
+.app-diagnostics-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+}
+
+.diag-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.diag-key {
+  color: var(--text-secondary);
+}
+
+.diag-val {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Confirmation Dialog */
+.settings-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: modalFadeIn 0.15s ease-out;
+}
+
+.settings-confirm-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-card);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: modalSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.confirm-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.confirm-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.confirm-btn-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.confirm-cancel-btn {
+  background: transparent;
+  border: 1px solid var(--border-card);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.confirm-cancel-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-active);
+}
+
+.confirm-danger-btn {
+  background: #ff007f;
+  border: none;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(255, 0, 127, 0.4);
+  transition: all 0.15s ease;
+}
+
+.confirm-danger-btn:hover {
+  background: #e00070;
+  transform: scale(1.02);
+}
+
+/* Light Theme tweaks */
+[data-theme="neumorphic-white"] .settings-modal-card {
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18), 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+[data-theme="neumorphic-white"] .shield-mode-card.is-selected {
+  background: rgba(79, 70, 229, 0.05);
+}
+
+[data-theme="neumorphic-white"] .settings-callout-box.info {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
+}
+
+
+

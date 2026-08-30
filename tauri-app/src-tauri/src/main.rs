@@ -12,7 +12,7 @@ use tauri::{
     Emitter, Manager, State, WebviewWindow,
 };
 use window_manager::WindowInfo;
-use config::{load_config, save_config, ShieldConfig};
+use config::{load_config, save_config, AppSettings, ShieldConfig};
 
 struct AppState {
     config: Mutex<ShieldConfig>,
@@ -64,6 +64,101 @@ fn disable_power_throttling() {
 #[cfg(not(windows))]
 fn disable_power_throttling() {}
 
+// ── Windows Autostart Registry helpers ───────────────────────────────────────
+
+#[cfg(windows)]
+fn set_autostart_registry(enable: bool) -> Result<(), String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::um::winreg::{RegOpenKeyExW, RegSetValueExW, RegDeleteValueW, RegCloseKey, HKEY_CURRENT_USER};
+    use winapi::um::winnt::{KEY_SET_VALUE, REG_SZ};
+    
+    fn wide(s: &str) -> Vec<u16> { OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect() }
+    
+    let subkey = wide(r"Software\Microsoft\Windows\CurrentVersion\Run");
+    let app_name = wide("StreamShield");
+    
+    unsafe {
+        let mut hkey = std::ptr::null_mut();
+        let status = RegOpenKeyExW(HKEY_CURRENT_USER, subkey.as_ptr(), 0, KEY_SET_VALUE, &mut hkey);
+        if status != 0 {
+            return Err(format!("RegOpenKeyExW failed with error code: {}", status));
+        }
+        
+        let res = if enable {
+            let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+            let cmd = format!("\"{}\" --minimized", current_exe.to_string_lossy());
+            let cmd_w = wide(&cmd);
+            let bytes_len = (cmd_w.len() * std::mem::size_of::<u16>()) as u32;
+            let set_res = RegSetValueExW(
+                hkey,
+                app_name.as_ptr(),
+                0,
+                REG_SZ,
+                cmd_w.as_ptr() as *const _,
+                bytes_len,
+            );
+            if set_res != 0 {
+                Err(format!("RegSetValueExW failed with error: {}", set_res))
+            } else {
+                Ok(())
+            }
+        } else {
+            let del_res = RegDeleteValueW(hkey, app_name.as_ptr());
+            if del_res != 0 && del_res != 2 {
+                Err(format!("RegDeleteValueW failed with error: {}", del_res))
+            } else {
+                Ok(())
+            }
+        };
+        
+        RegCloseKey(hkey);
+        res
+    }
+}
+
+#[cfg(not(windows))]
+fn set_autostart_registry(_enable: bool) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(windows)]
+fn get_autostart_registry() -> bool {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::um::winreg::{RegOpenKeyExW, RegQueryValueExW, RegCloseKey, HKEY_CURRENT_USER};
+    use winapi::um::winnt::KEY_QUERY_VALUE;
+    
+    fn wide(s: &str) -> Vec<u16> { OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect() }
+    
+    let subkey = wide(r"Software\Microsoft\Windows\CurrentVersion\Run");
+    let app_name = wide("StreamShield");
+    
+    unsafe {
+        let mut hkey = std::ptr::null_mut();
+        if RegOpenKeyExW(HKEY_CURRENT_USER, subkey.as_ptr(), 0, KEY_QUERY_VALUE, &mut hkey) != 0 {
+            return false;
+        }
+        let mut data_type = 0u32;
+        let mut data_len = 0u32;
+        let query_res = RegQueryValueExW(
+            hkey,
+            app_name.as_ptr(),
+            std::ptr::null_mut(),
+            &mut data_type,
+            std::ptr::null_mut(),
+            &mut data_len,
+        );
+        RegCloseKey(hkey);
+        query_res == 0 && data_len > 0
+    }
+}
+
+#[cfg(not(windows))]
+fn get_autostart_registry() -> bool {
+    false
+}
+
 // ── Tray status helpers ───────────────────────────────────────────────────────
 
 fn tray_status_text(count: usize) -> String {
@@ -75,8 +170,11 @@ fn tray_status_text(count: usize) -> String {
 }
 
 fn update_tray_status(state: &AppState) {
-    let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();
-    let wins = window_manager::enumerate_windows(&shielded);
+    let (shielded, mode, auto_reapply) = state.config.lock().map(|c| {
+        (c.shielded_exes.clone(), c.settings.shield_mode.clone(), c.settings.auto_reapply)
+    }).unwrap_or_default();
+    
+    let wins = window_manager::enumerate_windows(&shielded, &mode, auto_reapply);
     let active_count = wins.iter().filter(|w| w.is_shielded).count();
     if let Ok(guard) = state.tray_status.lock() {
         if let Some(mi) = guard.as_ref() {
@@ -89,8 +187,11 @@ fn update_tray_status(state: &AppState) {
 
 #[tauri::command]
 fn get_windows(state: State<AppState>) -> Vec<WindowInfo> {
-    let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();
-    let wins = window_manager::enumerate_windows(&shielded);
+    let (shielded, mode, auto_reapply) = state.config.lock().map(|c| {
+        (c.shielded_exes.clone(), c.settings.shield_mode.clone(), c.settings.auto_reapply)
+    }).unwrap_or_default();
+    
+    let wins = window_manager::enumerate_windows(&shielded, &mode, auto_reapply);
     let active_count = wins.iter().filter(|w| w.is_shielded).count();
     if let Ok(guard) = state.tray_status.lock() {
         if let Some(mi) = guard.as_ref() {
@@ -102,7 +203,8 @@ fn get_windows(state: State<AppState>) -> Vec<WindowInfo> {
 
 #[tauri::command]
 fn toggle_shield(exe_name: String, hwnd: usize, _pid: u32, enable: bool, state: State<AppState>) -> Result<bool, String> {
-    injector::set_window_affinity(hwnd, enable)?;
+    let shield_mode = state.config.lock().map(|c| c.settings.shield_mode.clone()).unwrap_or_else(|_| "exclude".to_string());
+    injector::set_window_affinity(hwnd, enable, Some(&shield_mode))?;
     {
         let mut config = state.config.lock().map_err(|e| e.to_string())?;
         let normalized = exe_name.to_lowercase();
@@ -124,13 +226,88 @@ fn get_shielded_exes(state: State<AppState>) -> Vec<String> {
 
 #[tauri::command]
 fn reapply_shields(state: State<AppState>) -> Vec<String> {
-    let exes = state.config.lock().unwrap().shielded_exes.clone();
-    let res = window_manager::enumerate_windows(&exes).into_iter()
-        .filter(|w| exes.contains(&w.exe_name))
-        .filter(|w| injector::set_window_affinity(w.hwnd, true).is_ok())
+    let (exes, mode, auto_reapply) = state.config.lock().map(|c| {
+        (c.shielded_exes.clone(), c.settings.shield_mode.clone(), c.settings.auto_reapply)
+    }).unwrap_or_default();
+
+    let res = window_manager::enumerate_windows(&exes, &mode, auto_reapply).into_iter()
+        .filter(|w| exes.contains(&w.exe_name.to_lowercase()))
+        .filter(|w| injector::set_window_affinity(w.hwnd, true, Some(&mode)).is_ok())
         .map(|w| w.exe_name).collect();
     update_tray_status(&state);
     res
+}
+
+#[tauri::command]
+fn get_settings(state: State<AppState>) -> AppSettings {
+    let mut settings = state.config.lock().map(|c| c.settings.clone()).unwrap_or_default();
+    // Synchronize autostart with true Windows Registry state
+    #[cfg(windows)]
+    {
+        settings.autostart = get_autostart_registry();
+    }
+    settings
+}
+
+#[tauri::command]
+fn update_settings(settings: AppSettings, state: State<AppState>) -> Result<AppSettings, String> {
+    #[cfg(windows)]
+    {
+        let current_autostart = get_autostart_registry();
+        if settings.autostart != current_autostart {
+            let _ = set_autostart_registry(settings.autostart);
+        }
+    }
+
+    {
+        let mut config = state.config.lock().map_err(|e| e.to_string())?;
+        config.settings = settings.clone();
+        save_config(&config);
+    }
+
+    update_tray_status(&state);
+    Ok(settings)
+}
+
+#[tauri::command]
+fn reset_settings(state: State<AppState>) -> Result<AppSettings, String> {
+    let default_settings = AppSettings::default();
+    #[cfg(windows)]
+    {
+        let _ = set_autostart_registry(false);
+    }
+
+    {
+        let mut config = state.config.lock().map_err(|e| e.to_string())?;
+        config.settings = default_settings.clone();
+        save_config(&config);
+    }
+
+    update_tray_status(&state);
+    Ok(default_settings)
+}
+
+#[tauri::command]
+fn clear_all_shields(state: State<AppState>) -> Result<bool, String> {
+    let (exes, mode, _) = state.config.lock().map(|c| {
+        (c.shielded_exes.clone(), c.settings.shield_mode.clone(), false)
+    }).unwrap_or_default();
+
+    let wins = window_manager::enumerate_windows(&exes, &mode, false);
+    for w in wins {
+        if w.is_shielded {
+            let _ = injector::set_window_affinity(w.hwnd, false, None);
+        }
+    }
+
+    {
+        let mut config = state.config.lock().map_err(|e| e.to_string())?;
+        config.shielded_exes.clear();
+        save_config(&config);
+    }
+
+    update_tray_status(&state);
+    Ok(true)
 }
 
 #[tauri::command]
@@ -194,17 +371,26 @@ fn main() {
     disable_power_throttling();
     injector::cleanup_stale_dlls();
 
+    let initial_config = load_config();
+
     tauri::Builder::default()
-        .manage(AppState { config: Mutex::new(load_config()), tray_status: Mutex::new(None) })
+        .manage(AppState { config: Mutex::new(initial_config.clone()), tray_status: Mutex::new(None) })
         .invoke_handler(tauri::generate_handler![
             get_windows, toggle_shield, get_shielded_exes, reapply_shields,
+            get_settings, update_settings, reset_settings, clear_all_shields,
             check_admin, hide_to_tray, toggle_self_shield, is_self_shielded
         ])
-        .setup(|app| {
-            // ── Show main window ─────────────────────────────────────────
+        .setup(move |app| {
+            // ── Show main window (unless started with --minimized or start_minimized is on) ──
             let win = app.get_webview_window("main").ok_or("no main window")?;
-            win.show()?;
-            win.set_focus()?;
+            let args: Vec<String> = std::env::args().collect();
+            let is_minimized_arg = args.iter().any(|a| a == "--minimized" || a == "-m");
+            let should_start_minimized = is_minimized_arg || initial_config.settings.start_minimized;
+
+            if !should_start_minimized {
+                win.show()?;
+                win.set_focus()?;
+            }
 
             // ── Tray menu ────────────────────────────────────────────────
             let show   = MenuItem::with_id(app, "show",   "🛡️  Open StreamShield", true, None::<&str>)?;
@@ -274,9 +460,16 @@ fn main() {
                     std::thread::sleep(std::time::Duration::from_millis(5000));
                     disable_power_throttling();
                     if let Some(state) = app_handle.try_state::<AppState>() {
-                        let shielded = state.config.lock().map(|c| c.shielded_exes.clone()).unwrap_or_default();
-                        if !shielded.is_empty() {
-                            window_manager::auto_reapply_shields(&shielded);
+                        let (shielded, mode, auto_reapply) = {
+                            if let Ok(guard) = state.config.lock() {
+                                (guard.shielded_exes.clone(), guard.settings.shield_mode.clone(), guard.settings.auto_reapply)
+                            } else {
+                                (std::collections::HashSet::new(), "exclude".to_string(), false)
+                            }
+                        };
+                        
+                        if auto_reapply && !shielded.is_empty() {
+                            window_manager::auto_reapply_shields(&shielded, &mode);
                         }
                         update_tray_status(&state);
                     }
@@ -295,3 +488,4 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("StreamShield error");
 }
+

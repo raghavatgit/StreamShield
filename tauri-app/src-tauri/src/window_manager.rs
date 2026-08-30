@@ -11,7 +11,11 @@ pub struct WindowInfo {
 }
 
 #[cfg(windows)]
-pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>) -> Vec<WindowInfo> {
+pub fn enumerate_windows(
+    shielded_exes: &std::collections::HashSet<String>,
+    shield_mode: &str,
+    auto_reapply: bool,
+) -> Vec<WindowInfo> {
     use std::collections::{HashMap, HashSet};
     use winapi::shared::minwindef::{BOOL, LPARAM};
     use winapi::shared::windef::HWND;
@@ -121,13 +125,15 @@ pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>) -> V
         // AUTO-REAPPLY: If this executable was previously shielded by user config,
         // but this window instance isn't shielded yet (e.g. freshly launched app),
         // automatically inject and reapply the shield immediately!
-        let should_be_shielded = shielded_exes.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
-        if should_be_shielded && !is_shielded {
-            // Validate HWND is still alive before attempting injection
-            use winapi::um::winuser::IsWindow;
-            if unsafe { IsWindow(hwnd) } != 0 {
-                let _ = crate::injector::set_window_affinity(hwnd as usize, true);
-                is_shielded = query_live_affinity(hwnd as usize);
+        if auto_reapply {
+            let should_be_shielded = shielded_exes.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
+            if should_be_shielded && !is_shielded {
+                // Validate HWND is still alive before attempting injection
+                use winapi::um::winuser::IsWindow;
+                if unsafe { IsWindow(hwnd) } != 0 {
+                    let _ = crate::injector::set_window_affinity(hwnd as usize, true, Some(shield_mode));
+                    is_shielded = query_live_affinity(hwnd as usize);
+                }
             }
         }
 
@@ -157,7 +163,7 @@ pub fn enumerate_windows(shielded_exes: &std::collections::HashSet<String>) -> V
 
 /// Helper for background watchdog to auto-shield freshly opened windows without overhead
 #[cfg(windows)]
-pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>) {
+pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>, shield_mode: &str) {
     if shielded_exes.is_empty() {
         return;
     }
@@ -167,7 +173,7 @@ pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>) {
 
     unsafe extern "system" fn watch_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
         if IsWindowVisible(hwnd) == 0 { return 1; }
-        let (shielded_set, _) = &*(lparam as *const (std::collections::HashSet<String>, ()));
+        let (shielded_set, mode_str) = &*(lparam as *const (std::collections::HashSet<String>, String));
 
         let mut pid: u32 = 0;
         GetWindowThreadProcessId(hwnd, &mut pid);
@@ -179,14 +185,14 @@ pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>) {
         let should_shield = shielded_set.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
         if should_shield && !query_live_affinity(hwnd as usize) {
             if IsWindowVisible(hwnd) != 0 {
-                let _ = crate::injector::set_window_affinity(hwnd as usize, true);
+                let _ = crate::injector::set_window_affinity(hwnd as usize, true, Some(mode_str));
             }
         }
 
         1
     }
 
-    let payload = (shielded_exes.clone(), ());
+    let payload = (shielded_exes.clone(), shield_mode.to_string());
     unsafe {
         EnumWindows(Some(watch_proc), &payload as *const _ as LPARAM);
     }
@@ -424,7 +430,7 @@ unsafe fn hicon_to_base64_png(hicon: winapi::shared::windef::HICON) -> Option<St
 }
 
 #[cfg(not(windows))]
-pub fn enumerate_windows(_shielded_exes: &std::collections::HashSet<String>) -> Vec<WindowInfo> { vec![] }
+pub fn enumerate_windows(_shielded_exes: &std::collections::HashSet<String>, _shield_mode: &str, _auto_reapply: bool) -> Vec<WindowInfo> { vec![] }
 
 #[cfg(not(windows))]
-pub fn auto_reapply_shields(_shielded_exes: &std::collections::HashSet<String>) {}
+pub fn auto_reapply_shields(_shielded_exes: &std::collections::HashSet<String>, _shield_mode: &str) {}

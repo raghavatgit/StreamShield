@@ -72,13 +72,22 @@ mod imp {
     }
 
     /// Called as a remote thread entry point.
-    /// param encodes: bit 63 = enable (1) / disable (0), bits 0-62 = primary HWND value
+    /// param encodes:
+    /// - bit 63: enable (1) / disable (0)
+    /// - bit 62: prefer monitor mode (1) / exclude mode (0)
+    /// - bits 0-61: primary HWND value
     #[no_mangle]
     pub unsafe extern "system" fn shield_window(param: *mut std::ffi::c_void) -> u32 {
         let val = param as usize;
         let enable = (val & (1usize << 63)) != 0;
-        let primary_hwnd = (val & !(1usize << 63)) as HWND;
-        let affinity = if enable { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE };
+        let prefer_monitor = (val & (1usize << 62)) != 0;
+        let primary_hwnd = (val & !(3usize << 62)) as HWND;
+        
+        let affinity = if enable {
+            if prefer_monitor { WDA_MONITOR } else { WDA_EXCLUDEFROMCAPTURE }
+        } else {
+            WDA_NONE
+        };
 
         let mut res = 1u32;
         if !primary_hwnd.is_null() {

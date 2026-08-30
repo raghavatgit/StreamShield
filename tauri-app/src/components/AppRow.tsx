@@ -13,6 +13,8 @@ interface Props {
   window: WindowInfo;
   shielded: boolean;
   onToggle: (w: WindowInfo, e: boolean) => void;
+  compactMode?: boolean;
+  showPid?: boolean;
 }
 
 function getFallbackGradient(name: string): { bg: string; color: string } {
@@ -32,6 +34,8 @@ export default function AppRow({
   window: win,
   shielded,
   onToggle,
+  compactMode = false,
+  showPid = true,
 }: Props) {
   const cleanName = win.exe_name.replace(/\.exe$/i, "");
   const initial = cleanName[0]?.toUpperCase() ?? "?";
@@ -39,7 +43,7 @@ export default function AppRow({
 
   return (
     <div
-      className={`app-card ${shielded ? "is-shielded" : ""}`}
+      className={`app-card ${shielded ? "is-shielded" : ""} ${compactMode ? "is-compact" : ""}`}
       id={`app-row-${win.pid}-${win.hwnd}`}
       onClick={(e) => {
         const target = e.target as HTMLElement;
@@ -77,7 +81,7 @@ export default function AppRow({
           <span className="app-name-label" title={win.exe_name}>
             {cleanName}
           </span>
-          <span className="pid-tag">PID {win.pid}</span>
+          {showPid && <span className="pid-tag">PID {win.pid}</span>}
           {shielded && <span className="shield-tag">SHIELDED</span>}
         </div>
 

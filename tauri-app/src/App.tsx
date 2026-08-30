@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import AppRow, { WindowInfo } from "./components/AppRow";
+import SettingsModal, { AppSettings } from "./components/SettingsModal";
 
 export type ThemeType = "discord" | "cyberpunk" | "neumorphic-white";
 
@@ -24,6 +25,22 @@ export default function App() {
   const [isSelfShielded, setIsSelfShielded] = useState(false);
   const [search, setSearch] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "shielded" | "unshielded">("all");
+  
+  const [settings, setSettings] = useState<AppSettings>({
+    autostart: false,
+    start_minimized: false,
+    auto_reapply: true,
+    shield_mode: "exclude",
+    poll_interval_ms: 3000,
+    theme: (localStorage.getItem("streamshield_theme") as ThemeType) || "cyberpunk",
+    compact_mode: false,
+    show_pid: true,
+    confirm_batch: false,
+  });
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [batchConfirmState, setBatchConfirmState] = useState<"shield_all" | "clear_all" | null>(null);
+
   const [theme, setTheme] = useState<ThemeType>(() => {
     return (localStorage.getItem("streamshield_theme") as ThemeType) || "cyberpunk";
   });
@@ -46,6 +63,18 @@ export default function App() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 3500);
   };
+
+  const loadSettings = useCallback(async () => {
+    try {
+      const s = await invoke<AppSettings>("get_settings");
+      setSettings(s);
+      if (s.theme) {
+        setTheme(s.theme as ThemeType);
+      }
+    } catch (e) {
+      console.error("Failed to load settings:", e);
+    }
+  }, []);
 
   const loadWindows = useCallback(async (force?: boolean) => {
     // Debounce: skip if last call was <500ms ago (prevents triple-fire on focus)
@@ -81,10 +110,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    loadSettings();
     loadWindows();
-    const interval = setInterval(() => {
-      loadWindows();
-    }, 2500);
+
+    let interval: ReturnType<typeof setInterval> | null = null;
+    if (settings.poll_interval_ms > 0) {
+      interval = setInterval(() => {
+        loadWindows();
+      }, settings.poll_interval_ms);
+    }
 
     const onFocus = () => loadWindows();
     const onVisibilityChange = () => {
@@ -101,12 +135,50 @@ export default function App() {
     });
 
     return () => {
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [loadWindows]);
+  }, [loadWindows, loadSettings, settings.poll_interval_ms]);
+
+  const handleUpdateSettings = async (newSettings: AppSettings) => {
+    try {
+      const saved = await invoke<AppSettings>("update_settings", { settings: newSettings });
+      setSettings(saved);
+      if (saved.theme) {
+        setTheme(saved.theme as ThemeType);
+      }
+      showToast("Settings saved", "success");
+    } catch (e) {
+      showToast(String(e).replace("Error: ", ""), "error");
+    }
+  };
+
+  const handleResetSettings = async () => {
+    try {
+      const def = await invoke<AppSettings>("reset_settings");
+      setSettings(def);
+      if (def.theme) {
+        setTheme(def.theme as ThemeType);
+      }
+      showToast("Settings reset to defaults", "info");
+    } catch (e) {
+      showToast(String(e).replace("Error: ", ""), "error");
+    }
+  };
+
+  const handleClearAllShields = async () => {
+    try {
+      await invoke("clear_all_shields");
+      setShieldedExes(new Set());
+      setWindows((prev) => prev.map((w) => ({ ...w, is_shielded: false })));
+      showToast("All applications unshielded", "info");
+      await loadWindows(true);
+    } catch (e) {
+      showToast(String(e).replace("Error: ", ""), "error");
+    }
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -207,6 +279,22 @@ export default function App() {
     }
   };
 
+  const handleBatchShieldClick = () => {
+    if (settings.confirm_batch) {
+      setBatchConfirmState("shield_all");
+    } else {
+      handleShieldAll();
+    }
+  };
+
+  const handleBatchClearClick = () => {
+    if (settings.confirm_batch) {
+      setBatchConfirmState("clear_all");
+    } else {
+      handleUnshieldAll();
+    }
+  };
+
   const filtered = windows.filter((w) => {
     const matchesSearch =
       w.exe_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -259,6 +347,7 @@ export default function App() {
                       className={`theme-menu-choice ${theme === t.id ? "is-selected" : ""}`}
                       onClick={() => {
                         setTheme(t.id);
+                        handleUpdateSettings({ ...settings, theme: t.id });
                         setThemeMenuOpen(false);
                       }}
                     >
@@ -273,6 +362,15 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {/* Settings Gear Button */}
+            <button
+              className="settings-gear-btn"
+              onClick={() => setSettingsOpen(true)}
+              title="Open StreamShield Preferences"
+            >
+              ⚙️
+            </button>
           </div>
         </div>
 
@@ -297,7 +395,7 @@ export default function App() {
           <div className="batch-controls">
             <button
               className="batch-btn"
-              onClick={handleShieldAll}
+              onClick={handleBatchShieldClick}
               disabled={windows.length === 0}
               title="Shield all running applications"
             >
@@ -305,7 +403,7 @@ export default function App() {
             </button>
             <button
               className="batch-btn"
-              onClick={handleUnshieldAll}
+              onClick={handleBatchClearClick}
               disabled={shieldedCount === 0}
               title="Unshield all applications"
             >
@@ -363,7 +461,7 @@ export default function App() {
       </section>
 
       {/* Main List Body */}
-      <main className="app-card-viewport">
+      <main className={`app-card-viewport ${settings.compact_mode ? "is-compact" : ""}`}>
         {loading ? (
           <div className="card-skeleton-stack">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -381,13 +479,15 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <div className="cards-layout-stack">
+          <div className={`cards-layout-stack ${settings.compact_mode ? "is-compact" : ""}`}>
             {filtered.map((win) => (
               <AppRow
                 key={`${win.pid}-${win.hwnd}`}
                 window={win}
                 shielded={shieldedExes.has(win.exe_name)}
                 onToggle={handleToggle}
+                compactMode={settings.compact_mode}
+                showPid={settings.show_pid}
               />
             ))}
           </div>
@@ -432,6 +532,53 @@ export default function App() {
         </div>
       </footer>
 
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        onUpdateSettings={handleUpdateSettings}
+        onResetSettings={handleResetSettings}
+        onClearAllShields={handleClearAllShields}
+        shieldedCount={shieldedCount}
+        totalWindows={windows.length}
+        isAdmin={isAdmin}
+      />
+
+      {/* Batch Action Confirmation Dialog */}
+      {batchConfirmState && (
+        <div className="settings-confirm-overlay" onClick={() => setBatchConfirmState(null)}>
+          <div className="settings-confirm-card" onClick={(e) => e.stopPropagation()}>
+            <h3 className="confirm-title">
+              {batchConfirmState === "shield_all" ? "Protect all applications?" : "Unshield all applications?"}
+            </h3>
+            <p className="confirm-text">
+              {batchConfirmState === "shield_all"
+                ? `This will apply capture protection to all ${windows.length} active window(s).`
+                : `This will remove capture protection from all ${shieldedCount} protected window(s).`}
+            </p>
+            <div className="confirm-btn-row">
+              <button className="confirm-cancel-btn" onClick={() => setBatchConfirmState(null)}>
+                Cancel
+              </button>
+              <button
+                className="confirm-danger-btn"
+                onClick={async () => {
+                  if (batchConfirmState === "shield_all") {
+                    await handleShieldAll();
+                  } else {
+                    await handleUnshieldAll();
+                  }
+                  setBatchConfirmState(null);
+                }}
+              >
+                {batchConfirmState === "shield_all" ? "Yes, Shield All" : "Yes, Clear All"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Floating Toast Notification */}
       {toast && (
         <div className={`floating-toast ${toast.type || "error"}`}>
@@ -444,3 +591,4 @@ export default function App() {
     </div>
   );
 }
+

@@ -34,16 +34,16 @@ impl Drop for AutoCloseHandle {
 }
 
 /// Shield or unshield a window from screen capture.
-pub fn set_window_affinity(hwnd: usize, enable: bool) -> Result<(), String> {
+pub fn set_window_affinity(hwnd: usize, enable: bool, shield_mode: Option<&str>) -> Result<(), String> {
     #[cfg(windows)]
     {
         let our_pid = std::process::id();
         let win_pid = get_window_pid(hwnd)?;
 
         if win_pid == our_pid {
-            return set_affinity_direct(hwnd, enable);
+            return set_affinity_direct(hwnd, enable, shield_mode);
         }
-        inject_and_shield(win_pid, hwnd, enable)
+        inject_and_shield(win_pid, hwnd, enable, shield_mode)
     }
     #[cfg(not(windows))]
     Err("Windows only".to_string())
@@ -59,7 +59,7 @@ fn get_window_pid(hwnd: usize) -> Result<u32, String> {
 }
 
 #[cfg(windows)]
-fn set_affinity_direct(hwnd: usize, enable: bool) -> Result<(), String> {
+fn set_affinity_direct(hwnd: usize, enable: bool, shield_mode: Option<&str>) -> Result<(), String> {
     use winapi::shared::windef::HWND;
     use winapi::um::winuser::{
         GetWindowDisplayAffinity, SetWindowDisplayAffinity, SetWindowPos, RedrawWindow,
@@ -70,17 +70,28 @@ fn set_affinity_direct(hwnd: usize, enable: bool) -> Result<(), String> {
     const WDA_EXCLUDEFROMCAPTURE: u32 = 0x00000011;
     const WDA_MONITOR: u32 = 0x00000001;
 
+    let prefer_monitor = shield_mode.map(|m| m.eq_ignore_ascii_case("monitor")).unwrap_or(false);
+
     // Check current affinity — skip if already at desired value
     let mut current: u32 = 0;
     let got = unsafe { GetWindowDisplayAffinity(hwnd as _, &mut current) };
     if got != 0 {
-        if enable && current != 0 { return Ok(()); }  // Already shielded
+        if enable && current != 0 {
+            if prefer_monitor && current == WDA_MONITOR { return Ok(()); }
+            if !prefer_monitor && current == WDA_EXCLUDEFROMCAPTURE { return Ok(()); }
+        }
         if !enable && current == 0 { return Ok(()); }  // Already unshielded
     }
 
-    let affinity = if enable { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE };
+    let affinity = if enable {
+        if prefer_monitor { WDA_MONITOR } else { WDA_EXCLUDEFROMCAPTURE }
+    } else {
+        WDA_NONE
+    };
+
     let mut ok = unsafe { SetWindowDisplayAffinity(hwnd as _, affinity) };
-    if ok == 0 && enable {
+    if ok == 0 && enable && !prefer_monitor {
+        // Fallback to WDA_MONITOR if WDA_EXCLUDEFROMCAPTURE fails
         ok = unsafe { SetWindowDisplayAffinity(hwnd as _, WDA_MONITOR) };
     }
     if ok != 0 {
@@ -143,7 +154,7 @@ fn get_remote_module_base(pid: u32, dll_filename: &str) -> Option<usize> {
 }
 
 #[cfg(windows)]
-fn inject_and_shield(pid: u32, hwnd: usize, enable: bool) -> Result<(), String> {
+fn inject_and_shield(pid: u32, hwnd: usize, enable: bool, shield_mode: Option<&str>) -> Result<(), String> {
     use winapi::um::processthreadsapi::{OpenProcess, CreateRemoteThread};
     use winapi::um::memoryapi::{VirtualAllocEx, WriteProcessMemory, VirtualFreeEx};
     use winapi::um::libloaderapi::{LoadLibraryA, GetProcAddress, FreeLibrary};
@@ -154,6 +165,8 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool) -> Result<(), String> 
         PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE,
         MEM_COMMIT, MEM_RESERVE, MEM_RELEASE, PAGE_READWRITE,
     };
+
+    let prefer_monitor = shield_mode.map(|m| m.eq_ignore_ascii_case("monitor")).unwrap_or(false);
 
     // Write DLL to a stable temp path (PID-unique to avoid sharing violations)
     let dll_name = format!("streamshield_hook_{}.dll", std::process::id());
@@ -232,8 +245,13 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool) -> Result<(), String> 
         let remote_fn = remote_base.wrapping_add(fn_offset);
         FreeLibrary(our_dll);
 
-        // Encode: bit 63 = enable flag, bits 0-62 = HWND handle value
-        let param = (hwnd & !(1usize << 63)) | (if enable { 1usize << 63 } else { 0 });
+        // Encode:
+        // - bit 63 = enable flag
+        // - bit 62 = prefer monitor flag
+        // - bits 0-61 = HWND handle value
+        let param = (hwnd & !(3usize << 62))
+            | (if enable { 1usize << 63 } else { 0 })
+            | (if prefer_monitor { 1usize << 62 } else { 0 });
 
         let t2 = CreateRemoteThread(proc_handle, null_mut(), 0,
             Some(std::mem::transmute(remote_fn)),
