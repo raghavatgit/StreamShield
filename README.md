@@ -28,8 +28,10 @@
 
 ## ✨ Features
 
-- 🔒 **Zero-Latency Hardware Exclusion**: Leverages the Windows Desktop Window Manager (`DWM`) compositing pipeline (`SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`).
+- 🎮 **NVIDIA ShadowPlay & GeForce Experience Bypass**: Bypasses hardware Multi-Plane Overlay (MPO) plane leakage and prevents NVIDIA capture lockouts (*"An app is preventing screen recording"*) so Instant Replay and Desktop Capture cleanly exclude shielded apps.
+- 🔒 **Zero-Latency Hardware Exclusion**: Leverages the Windows Desktop Window Manager (`DWM`) compositing pipeline (`SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` and `WDA_MONITOR`).
 - 🚀 **100% Standalone & Portable**: Single ~3.1 MB executable. No installation required, zero background drivers, zero bloat.
+- ⚙️ **Comprehensive Settings Subsystem**: Windows Startup autostart, minimize to tray, customizable scan polling intervals (2s to 10s), and batch confirmation dialogs.
 - 🎨 **3 Curated Theme Presets**:
   - 🌌 **Cyberpunk Glow**: Electric cyan & hot pink neon with ambient backdrop glows.
   - 💬 **Discord Dark**: Discord-native dark palette with Emerald active accents.

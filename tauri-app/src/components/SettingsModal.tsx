@@ -298,9 +298,9 @@ export default function SettingsModal({
 
               <div className="setting-row-item">
                 <div className="setting-meta">
-                  <span className="setting-label">NVIDIA ShadowPlay & Overlay Plane Compatibility</span>
+                  <span className="setting-label">NVIDIA ShadowPlay & Overlay Bypass (MPO Fix)</span>
                   <span className="setting-subtext">
-                    Forces Windows DWM compositing (disables hardware MPO overlay plane bypass) so NVIDIA ShadowPlay & Instant Replay consistently mask shielded applications
+                    Bypasses NVIDIA ShadowPlay capture restrictions and prevents hardware MPO overlay leakage so Instant Replay and Desktop Capture cleanly exclude shielded apps without blocking recording
                   </span>
                 </div>
                 <label className="toggle-control">
