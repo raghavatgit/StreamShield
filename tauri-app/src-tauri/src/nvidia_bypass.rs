@@ -74,6 +74,62 @@ pub fn patch_nvidia_processes() -> usize {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 #[cfg(windows)]
+fn enable_debug_privilege() {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::um::processthreadsapi::{GetCurrentProcess, OpenProcessToken};
+    use winapi::um::securitybaseapi::AdjustTokenPrivileges;
+    use winapi::um::winbase::LookupPrivilegeValueW;
+    use winapi::um::winnt::{
+        TOKEN_ADJUST_PRIVILEGES, TOKEN_QUERY, SE_PRIVILEGE_ENABLED,
+        TOKEN_PRIVILEGES, LUID,
+    };
+    use winapi::um::handleapi::CloseHandle;
+
+    fn wide(s: &str) -> Vec<u16> {
+        OsStr::new(s)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    }
+
+    unsafe {
+        let mut token = std::ptr::null_mut();
+        if OpenProcessToken(
+            GetCurrentProcess(),
+            TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+            &mut token,
+        ) == 0
+        {
+            return;
+        }
+
+        let priv_name = wide("SeDebugPrivilege");
+        let mut luid: LUID = std::mem::zeroed();
+        if LookupPrivilegeValueW(std::ptr::null(), priv_name.as_ptr(), &mut luid) == 0 {
+            CloseHandle(token);
+            return;
+        }
+
+        let mut tp: TOKEN_PRIVILEGES = std::mem::zeroed();
+        tp.PrivilegeCount = 1;
+        tp.Privileges[0].Luid = luid;
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+        AdjustTokenPrivileges(
+            token,
+            0,
+            &mut tp,
+            0,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        );
+
+        CloseHandle(token);
+    }
+}
+
+#[cfg(windows)]
 fn patch_nvidia_drm_check() -> (usize, Vec<String>) {
     use winapi::um::handleapi::CloseHandle;
     use winapi::um::memoryapi::ReadProcessMemory;
@@ -121,6 +177,9 @@ fn patch_nvidia_drm_check() -> (usize, Vec<String>) {
 
     let mut patched_count: usize = 0;
     let mut errors: Vec<String> = Vec::new();
+
+    // Escalate to SeDebugPrivilege so we can open SYSTEM-level NVIDIA processes
+    enable_debug_privilege();
 
     unsafe {
         // ── Step 1: Enumerate running processes ──────────────────────────
