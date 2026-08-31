@@ -1418,6 +1418,91 @@ html, body, #root {
   line-height: 1.35;
 }
 
+/* Capture Environment Banner */
+.capture-env-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-card);
+  transition: all 0.2s ease;
+}
+
+.capture-env-banner.nvidia-active {
+  background: rgba(118, 185, 0, 0.08);
+  border-color: rgba(118, 185, 0, 0.35);
+}
+
+.capture-env-banner.standard {
+  background: var(--bg-secondary);
+  border-color: var(--border-card);
+}
+
+.capture-env-icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-surface);
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.capture-env-banner.nvidia-active .capture-env-icon-box {
+  color: #76b900;
+  background: rgba(118, 185, 0, 0.15);
+}
+
+.capture-env-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.capture-env-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.capture-env-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.status-pill-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+}
+
+.status-pill-badge.active {
+  background: rgba(35, 165, 90, 0.2);
+  color: #23a55a;
+  border: 1px solid rgba(35, 165, 90, 0.4);
+}
+
+.mode-tag.highlight {
+  background: rgba(118, 185, 0, 0.2);
+  color: #76b900;
+}
+
+.shield-mode-card.is-selected .mode-tag.highlight {
+  background: #76b900;
+  color: #000;
+}
+
 /* Theme Selection Cards */
 .theme-selection-cards {
   display: grid;

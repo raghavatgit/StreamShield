@@ -28,6 +28,15 @@ export interface AppSettings {
   self_stealth: boolean;
 }
 
+export interface CaptureEnvironment {
+  nvidia_detected: boolean;
+  obs_detected: boolean;
+  discord_detected: boolean;
+  mpo_active: boolean;
+  recommended_mode: string;
+  summary: string;
+}
+
 interface ThemeChoice {
   id: ThemeType;
   name: string;
@@ -75,8 +84,16 @@ export default function SettingsModal({
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [patchingNvidia, setPatchingNvidia] = useState(false);
-  const [nvidiaPatchResult, setNvidiaPatchResult] = useState<string | null>(null);
+  const [captureEnv, setCaptureEnv] = useState<CaptureEnvironment | null>(null);
+
+  // Load capture environment diagnostics when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      invoke<CaptureEnvironment>("get_capture_environment")
+        .then((env) => setCaptureEnv(env))
+        .catch((err) => console.error("Failed to detect capture environment:", err));
+    }
+  }, [isOpen, activeTab]);
 
   // Close on Escape
   useEffect(() => {
@@ -100,6 +117,9 @@ export default function SettingsModal({
     try {
       const updated = { ...settings, [key]: value };
       await onUpdateSettings(updated);
+      // Refresh capture env status after settings update
+      const env = await invoke<CaptureEnvironment>("get_capture_environment").catch(() => null);
+      if (env) setCaptureEnv(env);
     } finally {
       setSaving(false);
     }
@@ -240,11 +260,30 @@ export default function SettingsModal({
           {/* TAB 2: PRIVACY ENGINE */}
           {activeTab === "shield" && (
             <div className="settings-section-pane">
+              {/* Capture Environment Status Badge */}
+              {captureEnv && (
+                <div className={`capture-env-banner ${captureEnv.nvidia_detected ? "nvidia-active" : "standard"}`}>
+                  <div className="capture-env-icon-box">
+                    <IconShield size={16} />
+                  </div>
+                  <div className="capture-env-meta">
+                    <div className="capture-env-title">
+                      {captureEnv.nvidia_detected
+                        ? "NVIDIA Capture Detected"
+                        : captureEnv.obs_detected || captureEnv.discord_detected
+                        ? "OBS Studio / Discord Active"
+                        : "Standard Capture Environment"}
+                    </div>
+                    <div className="capture-env-desc">{captureEnv.summary}</div>
+                  </div>
+                </div>
+              )}
+
               <div className="setting-stacked-block">
                 <div className="setting-meta">
                   <span className="setting-label">Capture Exclusion Affinity Mode</span>
                   <span className="setting-subtext">
-                    Select how OS-level display affinity masks shielded application windows
+                    Select how Windows display affinity masks shielded application windows
                   </span>
                 </div>
 
@@ -254,12 +293,12 @@ export default function SettingsModal({
                     onClick={() => handleToggle("shield_mode", "exclude")}
                   >
                     <div className="shield-mode-card-header">
-                      <span className="mode-tag">Invisible / Transparent</span>
+                      <span className="mode-tag">Best for OBS & Discord</span>
                       {settings.shield_mode === "exclude" && <IconCheck size={14} className="mode-check" />}
                     </div>
-                    <div className="shield-mode-title">Exclude from Capture</div>
+                    <div className="shield-mode-title">Invisible / Transparent</div>
                     <div className="shield-mode-desc">
-                      Protected windows vanish entirely from stream and OBS captures. Transparent to viewers.
+                      Protected windows vanish entirely from screen captures. Content behind the window is shown.
                     </div>
                   </div>
 
@@ -268,12 +307,12 @@ export default function SettingsModal({
                     onClick={() => handleToggle("shield_mode", "monitor")}
                   >
                     <div className="shield-mode-card-header">
-                      <span className="mode-tag">Black Out Mask</span>
+                      <span className="mode-tag highlight">NVIDIA ShadowPlay & Universal</span>
                       {settings.shield_mode === "monitor" && <IconCheck size={14} className="mode-check" />}
                     </div>
                     <div className="shield-mode-title">Black Screen Mask</div>
                     <div className="shield-mode-desc">
-                      Protected windows appear as solid black rectangles in capture output.
+                      Protected windows appear as solid black boxes. 100% compatible with NVIDIA Instant Replay without DRM recording pauses.
                     </div>
                   </div>
                 </div>
@@ -301,9 +340,14 @@ export default function SettingsModal({
 
               <div className="setting-row-item">
                 <div className="setting-meta">
-                  <span className="setting-label">NVIDIA ShadowPlay & Overlay Bypass (MPO Fix)</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span className="setting-label">Hardware Multiplane Overlay (MPO) Optimization</span>
+                    {settings.mpo_fix && (
+                      <span className="status-pill-badge active">Active</span>
+                    )}
+                  </div>
                   <span className="setting-subtext">
-                    Bypasses NVIDIA ShadowPlay capture restrictions and prevents hardware MPO overlay leakage so Instant Replay and Desktop Capture cleanly exclude shielded apps without blocking recording
+                    Disables hardware MPO overlay planes in Windows DWM to ensure GPU-accelerated capture engines (ShadowPlay, OBS Game Capture) never bypass window privacy masks
                   </span>
                 </div>
                 <label className="toggle-control">
@@ -317,65 +361,6 @@ export default function SettingsModal({
                     <span className="toggle-knob" />
                   </span>
                 </label>
-              </div>
-
-              <div className="setting-row-item" style={{ flexDirection: "column", alignItems: "stretch", gap: "10px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div className="setting-meta">
-                    <span className="setting-label">NVIDIA ShadowPlay Full Bypass</span>
-                    <span className="setting-subtext">
-                      Three-layer bypass: patches NVIDIA DRM killswitch, disables MPO overlay planes, and forces DXGI Desktop Duplication so shielded windows stay hidden from ShadowPlay recordings
-                    </span>
-                  </div>
-                  <button
-                    className="settings-action-btn secondary"
-                    onClick={async () => {
-                      setPatchingNvidia(true);
-                      setNvidiaPatchResult(null);
-                      try {
-                        const status = await invoke<{
-                          drm_patch_count: number;
-                          drm_patch_errors: string[];
-                          mpo_fix_applied: boolean;
-                          mpo_fix_error: string | null;
-                          nvfbc_disabled: boolean;
-                          nvfbc_error: string | null;
-                        }>("apply_nvidia_bypass");
-                        const lines: string[] = [];
-                        lines.push(`Layer 1 (DRM Patch): ${status.drm_patch_count > 0 ? `${status.drm_patch_count} process${status.drm_patch_count === 1 ? "" : "es"} patched` : "No NVIDIA processes found"}`);
-                        lines.push(`Layer 2 (MPO Fix): ${status.mpo_fix_applied ? "Applied" : "Failed"}`);
-                        lines.push(`Layer 3 (NvFBC Disable): ${status.nvfbc_disabled ? "Applied" : "Best-effort"}`);
-                        if (status.drm_patch_errors.length > 0) {
-                          lines.push(`Notes: ${status.drm_patch_errors.slice(0, 2).join("; ")}`);
-                        }
-                        setNvidiaPatchResult(lines.join("\n"));
-                      } catch (e) {
-                        setNvidiaPatchResult(`Error: ${e}`);
-                      } finally {
-                        setPatchingNvidia(false);
-                      }
-                    }}
-                    disabled={patchingNvidia}
-                    style={{ minWidth: "160px", flexShrink: 0 }}
-                  >
-                    {patchingNvidia ? "Applying..." : "Bypass NVIDIA Now"}
-                  </button>
-                </div>
-                {nvidiaPatchResult && (
-                  <div style={{
-                    background: "rgba(0, 240, 255, 0.06)",
-                    border: "1px solid rgba(0, 240, 255, 0.15)",
-                    borderRadius: "8px",
-                    padding: "10px 14px",
-                    fontSize: "12px",
-                    lineHeight: "1.6",
-                    fontFamily: "monospace",
-                    color: "var(--accent-cyan, #00f0ff)",
-                    whiteSpace: "pre-line",
-                  }}>
-                    {nvidiaPatchResult}
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -398,9 +383,9 @@ export default function SettingsModal({
                     onChange={(e) => handleToggle("poll_interval_ms", Number(e.target.value))}
                     disabled={saving}
                   >
-                    {SCAN_INTERVALS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
+                    {SCAN_INTERVALS.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
                       </option>
                     ))}
                   </select>
@@ -410,35 +395,35 @@ export default function SettingsModal({
               <div className="settings-callout-box info">
                 <IconInfo size={16} className="callout-svg" />
                 <span className="callout-text">
-                  StreamShield uses native Win32 window event debouncing to minimize CPU and power consumption.
+                  StreamShield uses lightweight Win32 API window enumeration with near-zero CPU and memory footprint.
                 </span>
               </div>
             </div>
           )}
 
-          {/* TAB 4: DISPLAY & UI */}
+          {/* TAB 4: DISPLAY & THEME */}
           {activeTab === "ui" && (
             <div className="settings-section-pane">
-              {/* Theme Grid */}
               <div className="setting-stacked-block">
                 <div className="setting-meta">
-                  <span className="setting-label">Theme Preset</span>
-                  <span className="setting-subtext">Choose your visual color palette and ambient glow</span>
+                  <span className="setting-label">Color Palette & Interface Theme</span>
+                  <span className="setting-subtext">Choose your visual aesthetic and ambient glow style</span>
                 </div>
 
-                <div className="theme-selection-cards">
+                <div className="theme-selection-grid">
                   {THEMES.map((t) => (
                     <div
                       key={t.id}
-                      className={`theme-palette-card ${settings.theme === t.id ? "is-selected" : ""}`}
+                      className={`theme-card-preview ${settings.theme === t.id ? "is-active" : ""}`}
                       onClick={() => handleToggle("theme", t.id)}
                     >
-                      <div className="theme-preview-dots">
-                        <span style={{ background: t.colors[0] }} />
-                        <span style={{ background: t.colors[1] }} />
+                      <div className="theme-swatch-strip">
+                        {t.colors.map((c, i) => (
+                          <span key={i} className="theme-color-dot" style={{ backgroundColor: c }} />
+                        ))}
                       </div>
                       <span className="theme-card-name">{t.name}</span>
-                      {settings.theme === t.id && <span className="theme-card-badge">Active</span>}
+                      {settings.theme === t.id && <IconCheck size={14} className="theme-active-tick" />}
                     </div>
                   ))}
                 </div>
@@ -446,9 +431,9 @@ export default function SettingsModal({
 
               <div className="setting-row-item">
                 <div className="setting-meta">
-                  <span className="setting-label">Compact Card Mode</span>
+                  <span className="setting-label">Compact Row Layout</span>
                   <span className="setting-subtext">
-                    Condensed list layout for managing dozens of applications easily
+                    Reduces list spacing to fit more application windows on screen at once
                   </span>
                 </div>
                 <label className="toggle-control">
@@ -466,9 +451,9 @@ export default function SettingsModal({
 
               <div className="setting-row-item">
                 <div className="setting-meta">
-                  <span className="setting-label">Show Process PID Badges</span>
+                  <span className="setting-label">Display Process PID Badges</span>
                   <span className="setting-subtext">
-                    Display technical Windows Process ID tag next to executable names
+                    Shows numeric Windows Process IDs alongside application executable names
                   </span>
                 </div>
                 <label className="toggle-control">
@@ -488,7 +473,7 @@ export default function SettingsModal({
                 <div className="setting-meta">
                   <span className="setting-label">Confirm Batch Actions</span>
                   <span className="setting-subtext">
-                    Prompt confirmation before executing 'Shield All' or 'Clear'
+                    Prompts for confirmation before shielding or unshielding all applications simultaneously
                   </span>
                 </div>
                 <label className="toggle-control">

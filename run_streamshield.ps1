@@ -3,20 +3,19 @@
 param([switch]$Rebuild)
 
 $root = $PSScriptRoot
-$exe  = (Get-ChildItem -Path "$root\target*\debug\streamshield.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
-if (-not $exe) {
-    $exe = "$root\target4\debug\streamshield.exe"
-}
+$exe = (Get-ChildItem -Path "$root\target*\release\streamshield.exe", "$root\target*\debug\streamshield.exe", "$root\releases\*\streamshield.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
 
-if ($Rebuild) {
-    Write-Host "Rebuilding StreamShield (full bundle)..."
+if ($Rebuild -or (-not $exe)) {
+    Write-Host "Building StreamShield..."
     Push-Location "$root\tauri-app"
-    npm run tauri build -- --debug
+    npm run build
+    npx tauri build
     Pop-Location
+    $exe = (Get-ChildItem -Path "$root\target*\release\streamshield.exe", "$root\target*\debug\streamshield.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
 }
 
 if (-not (Test-Path $exe)) {
-    Write-Error "Exe not found. Run: .\run_streamshield.ps1 -Rebuild"
+    Write-Error "StreamShield executable not found. Please build using: .\run_streamshield.ps1 -Rebuild"
     exit 1
 }
 
