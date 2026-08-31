@@ -1,4 +1,4 @@
-# StreamShield v0.2.0 - Major Feature Release & NVIDIA ShadowPlay Bypass
+# StreamShield v0.2.0 - Major Feature Release & Capture Compatibility Engine
 
 **Publisher**: Raghav Goyal  
 **Release Date**: August 31, 2026  
@@ -6,23 +6,24 @@
 
 ---
 
-## 🚀 Headlining Feature: NVIDIA ShadowPlay & GeForce Experience Bypass
+## 🚀 Headlining Feature: Smart Capture Compatibility & NVIDIA ShadowPlay Support
 
-StreamShield v0.2.0 introduces native support and compatibility workarounds for **NVIDIA ShadowPlay, GeForce Experience, and Instant Replay**:
+StreamShield v0.2.0 introduces native support and compatibility enhancements for **NVIDIA ShadowPlay, GeForce Experience, NVIDIA App, and Instant Replay**:
 
-- **Bypasses Hardware MPO Plane Leakage**: Automatically configures Windows Desktop Window Manager (DWM) compositing so that hardware Multi-Plane Overlays (MPO) can no longer bypass display capture affinity.
-- **Eliminates Capture Lockouts**: Prevents NVIDIA from tripping its DRM killswitch (*"An app is preventing screen recording"*) and locking up full-screen or desktop recording when StreamShield is running.
-- **Flawless Clipping**: Gamers and content creators can now clip highlights or record their screens with NVIDIA ShadowPlay while keeping Discord, Telegram, banking tabs, and private windows 100% invisible.
+- **Dual Display Affinity Modes**:
+  - **Invisible / Transparent (`WDA_EXCLUDEFROMCAPTURE`)**: Best for OBS Studio, Discord Screen Share, Zoom, Microsoft Teams, and Google Meet. Windows completely disappear from the stream; viewers see whatever is behind the window.
+  - **Black Screen Mask (`WDA_MONITOR`)**: Best for **NVIDIA ShadowPlay, GeForce Experience, and NVIDIA App**. Renders private windows as solid black rectangles, completely eliminating *"A protected app is preventing screen recording"* DRM recording pauses.
+- **Hardware Multiplane Overlay (MPO) Optimization**: Automatically configures Windows Desktop Window Manager (DWM) compositing so that hardware Multiplane Overlays (MPO) can no longer leak private window frames into GPU-direct screen captures.
+- **Real-Time Capture Tool Detection**: Automatically detects active streaming and recording software (NVIDIA ShadowPlay, OBS Studio, Discord) and suggests the optimal affinity mode.
+- **Flawless Clipping**: Gamers and content creators can now clip highlights or record their screens with NVIDIA ShadowPlay while keeping Discord, Telegram, banking tabs, and private windows 100% hidden.
 
 ---
 
 ## 🌟 What's New in v0.2.0
 
-### 1. 🎮 NVIDIA ShadowPlay & Privacy Engine Tuning
-- **NVIDIA ShadowPlay & Overlay Bypass (MPO Fix)**: One-click toggle in Settings → Engine to force full DWM compositing on hardware overlay planes.
-- **Configurable Display Affinity Modes**:
-  - **Exclude from Capture (0x11)**: Target windows vanish into transparent space on streams, recordings, and screen shares.
-  - **Black Screen Mask (0x01)**: Obscures target windows with a solid black privacy rectangle.
+### 1. 🎮 Privacy Engine & Capture Compatibility Tuning
+- **Dual Affinity Modes**: Instant switching between Transparent (0x11) and Black Screen Mask (0x01) directly inside Settings → Engine.
+- **Hardware MPO Optimization Toggle**: One-click toggle in Settings → Engine to force full DWM compositing on hardware overlay planes, with real-time registry status display.
 - **Background Watchdog Auto-Reapply**: Automatically re-applies capture protection when shielded applications restart or open secondary windows.
 
 ### 2. 🚀 Windows Startup & System Integration
@@ -48,6 +49,7 @@ StreamShield v0.2.0 introduces native support and compatibility workarounds for 
 ### 6. 🧹 Codebase Quality
 - Completely eliminated em-dashes across comments, tooltips, documentation, and source code.
 - Added publisher metadata ("Raghav Goyal") to Windows binaries, MSI installer, and NSIS setup.
+- Cleaned up obsolete directories and redundant build artifacts.
 
 ---
 
@@ -55,6 +57,6 @@ StreamShield v0.2.0 introduces native support and compatibility workarounds for 
 
 | File | Size | Publisher | Description |
 |---|---|---|---|
-| **`streamshield.exe`** | `3.16 MB` | Raghav Goyal | Standalone portable executable (No installation needed) |
-| **`StreamShield_0.2.0_x64-setup.exe`** | `1.27 MB` | Raghav Goyal | Standard Windows NSIS Setup Installer |
-| **`StreamShield_0.2.0_x64_en-US.msi`** | `1.94 MB` | Raghav Goyal | Microsoft Installer Package for Enterprise / System Deployment |
+| **`streamshield.exe`** | `3.17 MB` | Raghav Goyal | Standalone portable executable (No installation needed) |
+| **`StreamShield_0.2.0_x64-setup.exe`** | `1.28 MB` | Raghav Goyal | Standard Windows NSIS Setup Installer |
+| **`StreamShield_0.2.0_x64_en-US.msi`** | `1.95 MB` | Raghav Goyal | Microsoft Installer Package for Enterprise / System Deployment |

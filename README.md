@@ -4,7 +4,7 @@
 
 **Per-Application Stream Privacy Manager for Windows**
 
-*Hide private applications (Discord, WhatsApp, Spotify, Chrome, Banking, IDEs) from your live streams, screen shares, and recordings with a single toggle - while keeping them 100% visible on your monitor.*
+*Hide private applications (Discord, WhatsApp, Spotify, Chrome, Banking, IDEs) from your live streams, screen shares, and recordings with a single toggle while keeping them 100% visible on your monitor.*
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?style=for-the-badge&logo=windows)](https://github.com/raghavatgit/StreamShield)
 [![Rust](https://img.shields.io/badge/Backend-Rust%202021-DEA584?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
@@ -20,25 +20,28 @@
 
 | Traditional Screen Sharing | With StreamShield 🛡️ |
 | :--- | :--- |
-| ❌ Sharing your entire screen accidentally leaks private DMs, Discord servers, Spotify playlists, credentials, and browsing tabs. | ✅ Toggle any app in StreamShield. It **vanishes into transparent/black space on stream** while remaining completely visible to you. |
+| ❌ Sharing your entire screen accidentally leaks private DMs, Discord servers, Spotify playlists, credentials, and browsing tabs. | ✅ Toggle any app in StreamShield. It **vanishes into transparent or black space on stream** while remaining completely visible to you. |
 | ❌ Sharing individual windows prevents you from multitasking or showing other apps seamlessly. | ✅ Share your entire display with zero fear of accidental leakages. |
-| ❌ Bulky OBS plugins require complex setup and affect broadcast performance. | ✅ **100% Standalone & Driverless**. Works natively across **Discord, OBS Studio, Zoom, Microsoft Teams, Google Meet, and GeForce Experience**. |
+| ❌ Bulky OBS plugins require complex setup and affect broadcast performance. | ✅ **100% Standalone & Driverless**. Works natively across **Discord, OBS Studio, Zoom, Microsoft Teams, Google Meet, NVIDIA ShadowPlay, and GeForce Experience**. |
 
 ---
 
 ## ✨ Features
 
-- 🎮 **NVIDIA ShadowPlay & GeForce Experience Bypass**: Bypasses hardware Multi-Plane Overlay (MPO) plane leakage and prevents NVIDIA capture lockouts (*"An app is preventing screen recording"*) so Instant Replay and Desktop Capture cleanly exclude shielded apps.
-- 🔒 **Zero-Latency Hardware Exclusion**: Leverages the Windows Desktop Window Manager (`DWM`) compositing pipeline (`SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` and `WDA_MONITOR`).
+- 🎮 **Smart Capture Compatibility Engine**:
+  - **Invisible / Transparent Mode (`WDA_EXCLUDEFROMCAPTURE`)**: Best for OBS Studio, Discord Screen Share, Zoom, Teams, and Google Meet. Windows completely disappear from the stream; viewers see whatever is behind the window.
+  - **Black Screen Mask Mode (`WDA_MONITOR`)**: Best for **NVIDIA ShadowPlay, GeForce Experience, and NVIDIA App**. Renders private windows as solid black rectangles, completely eliminating *"A protected app is preventing screen recording"* DRM recording pauses.
+  - **Real-Time Capture Tool Detection**: Automatically detects running capture software (NVIDIA, OBS, Discord) and suggests the optimal shield mode.
+- ⚡ **Hardware Multiplane Overlay (MPO) Optimization**: Prevents hardware GPU overlay plane leakage so that hardware-accelerated desktop captures and instant replays cleanly respect window privacy masks.
+- 🔒 **Zero-Latency Hardware Exclusion**: Leverages the Windows Desktop Window Manager (`DWM`) compositing pipeline natively.
 - 🚀 **100% Standalone & Portable**: Single ~3.1 MB executable. No installation required, zero background drivers, zero bloat.
-- ⚙️ **Comprehensive Settings Subsystem**: Windows Startup autostart, minimize to tray, customizable scan polling intervals (2s to 10s), and batch confirmation dialogs.
+- ⚙️ **Comprehensive Settings Subsystem**: Windows Startup autostart, minimize to tray, customizable scan polling intervals (2s to 10s), process PID badges, and batch confirmation dialogs.
 - 🎨 **3 Curated Theme Presets**:
   - 🌌 **Cyberpunk Glow**: Electric cyan & hot pink neon with ambient backdrop glows.
   - 💬 **Discord Dark**: Discord-native dark palette with Emerald active accents.
   - ☀️ **Clean White**: Crisp, high-contrast modern slate & indigo light theme.
-- 🔄 **Autonomous Background Watchdog**: Automatically detects and re-shields private applications when they restart or open new windows.
+- 🔄 **Autonomous Background Watchdog**: Automatically detects and re-shields private applications when they restart or open new secondary windows.
 - ⚡ **Anti-Sleep & Tray Throttling Protection**: Native Windows power management prevents background thread suspension when docked to the system tray.
-- 🎧 **Zero Audio Interference**: Plays crystal-clear uncompressed audio directly into your physical headphones at 0ms latency without altering Windows audio sessions.
 - 🔍 **Live Process Search & Filtering**: Instant search across running processes, window titles, and PIDs.
 
 ---
@@ -55,22 +58,23 @@
 │                  Rust Core Engine                       │
 │    • Enumerates visible windows & extracts native icons │
 │    • Remote ASLR DLL Injector (shield_dll.dll)          │
+│    • Capture environment detection & MPO optimizer      │
 │    • Background watchdog & Power state controller       │
 └──────────────────────────┬──────────────────────────────┘
                            │ Injects into Target Process
 ┌──────────────────────────▼──────────────────────────────┐
 │             Windows DWM Compositor                      │
-│     SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)    │
+│        SetWindowDisplayAffinity(AffinityMode)           │
 └──────────────────────────┬──────────────────────────────┘
              ┌─────────────┴─────────────┐
              │                           │
   [Your Physical Monitor]     [Capture Buffer / Stream Feed]
-    100% VISIBLE & LIVE         100% EXCLUDED / HIDDEN
+    100% VISIBLE & LIVE         100% EXCLUDED / MASKED
 ```
 
 1. StreamShield identifies the 64-bit target process and dynamically injects `shield_dll.dll` via remote thread execution with full 64-bit ASLR address resolution.
-2. The injected hook executes `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)` directly inside the target window's process context.
-3. It immediately invalidates the DWM visual surface cache (`SWP_FRAMECHANGED` & `RedrawWindow`), forcing the Windows compositor to exclude the window from all capture streams while keeping it live on your display.
+2. The injected hook executes `SetWindowDisplayAffinity(hwnd, AffinityMode)` directly inside the target window's process context.
+3. It immediately invalidates the DWM visual surface cache (`SWP_FRAMECHANGED` & `RedrawWindow`), forcing the Windows compositor to exclude or mask the window from all capture streams while keeping it live on your display.
 
 ---
 
@@ -81,7 +85,7 @@ Download **`streamshield.exe`** from the [Latest Releases](https://github.com/ra
 - **No installation needed** - simply double-click and run!
 
 ### Option 2: Windows Installer
-Download **`StreamShield-setup.exe`** for a standard Windows installation with Desktop and Start Menu shortcuts.
+Download **`StreamShield_0.2.0_x64-setup.exe`** for a standard Windows installation with Desktop and Start Menu shortcuts, or **`StreamShield_0.2.0_x64_en-US.msi`** for enterprise deployment.
 
 ---
 
@@ -111,12 +115,14 @@ cd tauri-app
 npm install
 
 # 3. Build standalone production binary
-npm run tauri build -- --no-bundle
+npx tauri build
 ```
 
-The optimized standalone binary will be generated at:
+The optimized production binaries and installers will be generated at:
 ```
-target4/release/streamshield.exe
+target/release/streamshield.exe
+target/release/bundle/nsis/StreamShield_0.2.0_x64-setup.exe
+target/release/bundle/msi/StreamShield_0.2.0_x64_en-US.msi
 ```
 
 ---
@@ -139,5 +145,5 @@ Feel free to check the [issues page](https://github.com/raghavatgit/StreamShield
 Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for more information.
 
 <div align="center">
-  <sub>Built with ❤️ for streamers, developers, and privacy enthusiasts.</sub>
+  <sub>Built with ❤️ by Raghav Goyal for streamers, developers, and privacy enthusiasts.</sub>
 </div>
