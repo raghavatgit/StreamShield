@@ -44,12 +44,30 @@ fn relaunch_as_admin() {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use winapi::um::shellapi::ShellExecuteW;
-    use winapi::um::winuser::SW_SHOW;
+    use winapi::um::winuser::{SW_SHOW, SW_HIDE};
     fn wide(s: &str) -> Vec<u16> { OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect() }
     let exe = std::env::current_exe().unwrap();
     let exe_w = wide(exe.to_str().unwrap());
     let verb_w = wide("runas");
-    unsafe { ShellExecuteW(std::ptr::null_mut(), verb_w.as_ptr(), exe_w.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOW as i32); }
+
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    let is_minimized = raw_args.iter().any(|a| a == "--minimized" || a == "-m");
+    let show_cmd = if is_minimized { SW_HIDE } else { SW_SHOW };
+
+    let args_str = raw_args.join(" ");
+    let args_w = wide(&args_str);
+    let params_ptr = if raw_args.is_empty() { std::ptr::null() } else { args_w.as_ptr() };
+
+    unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb_w.as_ptr(),
+            exe_w.as_ptr(),
+            params_ptr,
+            std::ptr::null(),
+            show_cmd as i32,
+        );
+    }
 }
 
 #[cfg(windows)]
@@ -499,7 +517,10 @@ fn main() {
 
             if !should_start_minimized {
                 win.show()?;
+                win.unminimize()?;
                 win.set_focus()?;
+            } else {
+                let _ = win.hide();
             }
 
             // ── Tray menu ────────────────────────────────────────────────
