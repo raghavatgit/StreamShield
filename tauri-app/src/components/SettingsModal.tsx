@@ -319,36 +319,63 @@ export default function SettingsModal({
                 </label>
               </div>
 
-              <div className="setting-row-item">
-                <div className="setting-meta">
-                  <span className="setting-label">Live NVIDIA DRM Scanner Bypass</span>
-                  <span className="setting-subtext">
-                    Live-patches NVIDIA capture processes (nvcontainer & NVIDIA Share) to disable DRM killswitches and allow screen recording with private apps hidden
-                  </span>
-                  {nvidiaPatchResult && (
-                    <span className="setting-subtext" style={{ color: "var(--accent-cyan, #00f0ff)", marginTop: "4px", fontWeight: 600 }}>
-                      {nvidiaPatchResult}
+              <div className="setting-row-item" style={{ flexDirection: "column", alignItems: "stretch", gap: "10px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div className="setting-meta">
+                    <span className="setting-label">NVIDIA ShadowPlay Full Bypass</span>
+                    <span className="setting-subtext">
+                      Three-layer bypass: patches NVIDIA DRM killswitch, disables MPO overlay planes, and forces DXGI Desktop Duplication so shielded windows stay hidden from ShadowPlay recordings
                     </span>
-                  )}
+                  </div>
+                  <button
+                    className="settings-action-btn secondary"
+                    onClick={async () => {
+                      setPatchingNvidia(true);
+                      setNvidiaPatchResult(null);
+                      try {
+                        const status = await invoke<{
+                          drm_patch_count: number;
+                          drm_patch_errors: string[];
+                          mpo_fix_applied: boolean;
+                          mpo_fix_error: string | null;
+                          nvfbc_disabled: boolean;
+                          nvfbc_error: string | null;
+                        }>("apply_nvidia_bypass");
+                        const lines: string[] = [];
+                        lines.push(`Layer 1 (DRM Patch): ${status.drm_patch_count > 0 ? `${status.drm_patch_count} process${status.drm_patch_count === 1 ? "" : "es"} patched` : "No NVIDIA processes found"}`);
+                        lines.push(`Layer 2 (MPO Fix): ${status.mpo_fix_applied ? "Applied" : "Failed"}`);
+                        lines.push(`Layer 3 (NvFBC Disable): ${status.nvfbc_disabled ? "Applied" : "Best-effort"}`);
+                        if (status.drm_patch_errors.length > 0) {
+                          lines.push(`Notes: ${status.drm_patch_errors.slice(0, 2).join("; ")}`);
+                        }
+                        setNvidiaPatchResult(lines.join("\n"));
+                      } catch (e) {
+                        setNvidiaPatchResult(`Error: ${e}`);
+                      } finally {
+                        setPatchingNvidia(false);
+                      }
+                    }}
+                    disabled={patchingNvidia}
+                    style={{ minWidth: "160px", flexShrink: 0 }}
+                  >
+                    {patchingNvidia ? "Applying..." : "Bypass NVIDIA Now"}
+                  </button>
                 </div>
-                <button
-                  className="settings-action-btn secondary"
-                  onClick={async () => {
-                    setPatchingNvidia(true);
-                    try {
-                      const count = await invoke<number>("apply_nvidia_bypass");
-                      setNvidiaPatchResult(`Successfully patched ${count} NVIDIA capture process${count === 1 ? "" : "es"}`);
-                    } catch (e) {
-                      setNvidiaPatchResult(`Error: ${e}`);
-                    } finally {
-                      setPatchingNvidia(false);
-                    }
-                  }}
-                  disabled={patchingNvidia}
-                  style={{ minWidth: "150px" }}
-                >
-                  {patchingNvidia ? "Patching..." : "Bypass NVIDIA Now"}
-                </button>
+                {nvidiaPatchResult && (
+                  <div style={{
+                    background: "rgba(0, 240, 255, 0.06)",
+                    border: "1px solid rgba(0, 240, 255, 0.15)",
+                    borderRadius: "8px",
+                    padding: "10px 14px",
+                    fontSize: "12px",
+                    lineHeight: "1.6",
+                    fontFamily: "monospace",
+                    color: "var(--accent-cyan, #00f0ff)",
+                    whiteSpace: "pre-line",
+                  }}>
+                    {nvidiaPatchResult}
+                  </div>
+                )}
               </div>
             </div>
           )}

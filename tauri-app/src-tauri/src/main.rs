@@ -257,51 +257,36 @@ fn reapply_shields(state: State<AppState>) -> Vec<String> {
     res
 }
 
+// MPO fix now delegates to the nvidia_bypass module for unified handling
 #[cfg(windows)]
 fn set_mpo_fix_registry(enable: bool) -> Result<(), String> {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
-    use winapi::um::winreg::{RegOpenKeyExW, RegSetValueExW, RegDeleteValueW, RegCloseKey, HKEY_LOCAL_MACHINE};
-    use winapi::um::winnt::{KEY_SET_VALUE, REG_DWORD};
-    
-    fn wide(s: &str) -> Vec<u16> { OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect() }
-    
-    let subkey = wide(r"SOFTWARE\Microsoft\Windows\Dwm");
-    let val_name = wide("OverlayTestMode");
-    
-    unsafe {
-        let mut hkey = std::ptr::null_mut();
-        let status = RegOpenKeyExW(HKEY_LOCAL_MACHINE, subkey.as_ptr(), 0, KEY_SET_VALUE, &mut hkey);
-        if status != 0 {
-            return Err(format!("RegOpenKeyExW (HKLM) failed (error code {}). Administrator privileges required to change MPO settings.", status));
-        }
-        
-        let res = if enable {
-            let data: u32 = 5; // 5 = disable hardware MPO overlay plane bypass
-            let set_res = RegSetValueExW(
-                hkey,
-                val_name.as_ptr(),
-                0,
-                REG_DWORD,
-                &data as *const u32 as *const _,
-                std::mem::size_of::<u32>() as u32,
-            );
-            if set_res != 0 {
-                Err(format!("RegSetValueExW failed with error: {}", set_res))
-            } else {
-                Ok(())
-            }
+    if enable {
+        // Apply the full MPO + overlay fix via the bypass engine
+        let status = nvidia_bypass::apply_full_bypass();
+        if status.mpo_fix_applied {
+            Ok(())
         } else {
-            let del_res = RegDeleteValueW(hkey, val_name.as_ptr());
-            if del_res != 0 && del_res != 2 {
-                Err(format!("RegDeleteValueW failed with error: {}", del_res))
-            } else {
-                Ok(())
+            Err(status.mpo_fix_error.unwrap_or_else(|| "Unknown MPO fix error".to_string()))
+        }
+    } else {
+        // Remove the MPO fix registry values
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        use winapi::um::winreg::{RegOpenKeyExW, RegDeleteValueW, RegCloseKey, HKEY_LOCAL_MACHINE};
+        use winapi::um::winnt::KEY_SET_VALUE;
+        fn wide(s: &str) -> Vec<u16> { OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect() }
+
+        let subkey = wide(r"SOFTWARE\Microsoft\Windows\Dwm");
+        let val_name = wide("OverlayTestMode");
+        unsafe {
+            let mut hkey = std::ptr::null_mut();
+            let status = RegOpenKeyExW(HKEY_LOCAL_MACHINE, subkey.as_ptr(), 0, KEY_SET_VALUE, &mut hkey);
+            if status == 0 {
+                RegDeleteValueW(hkey, val_name.as_ptr());
+                RegCloseKey(hkey);
             }
-        };
-        
-        RegCloseKey(hkey);
-        res
+        }
+        Ok(())
     }
 }
 
@@ -312,35 +297,7 @@ fn set_mpo_fix_registry(_enable: bool) -> Result<(), String> {
 
 #[cfg(windows)]
 fn get_mpo_fix_registry() -> bool {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
-    use winapi::um::winreg::{RegOpenKeyExW, RegQueryValueExW, RegCloseKey, HKEY_LOCAL_MACHINE};
-    use winapi::um::winnt::KEY_QUERY_VALUE;
-    
-    fn wide(s: &str) -> Vec<u16> { OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect() }
-    
-    let subkey = wide(r"SOFTWARE\Microsoft\Windows\Dwm");
-    let val_name = wide("OverlayTestMode");
-    
-    unsafe {
-        let mut hkey = std::ptr::null_mut();
-        if RegOpenKeyExW(HKEY_LOCAL_MACHINE, subkey.as_ptr(), 0, KEY_QUERY_VALUE, &mut hkey) != 0 {
-            return false;
-        }
-        let mut data_type = 0u32;
-        let mut data: u32 = 0;
-        let mut data_len = std::mem::size_of::<u32>() as u32;
-        let query_res = RegQueryValueExW(
-            hkey,
-            val_name.as_ptr(),
-            std::ptr::null_mut(),
-            &mut data_type,
-            &mut data as *mut u32 as *mut _,
-            &mut data_len,
-        );
-        RegCloseKey(hkey);
-        query_res == 0 && data == 5
-    }
+    nvidia_bypass::is_mpo_fix_active()
 }
 
 #[cfg(not(windows))]
@@ -477,13 +434,21 @@ fn is_self_shielded(window: WebviewWindow) -> bool {
 }
 
 #[tauri::command]
-fn apply_nvidia_bypass() -> Result<usize, String> {
-    #[cfg(windows)]
-    {
-        Ok(nvidia_bypass::patch_nvidia_processes())
+fn apply_nvidia_bypass() -> Result<nvidia_bypass::NvidiaBypassStatus, String> {
+    Ok(nvidia_bypass::apply_full_bypass())
+}
+
+#[tauri::command]
+fn get_nvidia_bypass_status() -> nvidia_bypass::NvidiaBypassStatus {
+    // Return a status check without re-applying patches
+    nvidia_bypass::NvidiaBypassStatus {
+        drm_patch_count: 0,
+        drm_patch_errors: vec![],
+        mpo_fix_applied: get_mpo_fix_registry(),
+        mpo_fix_error: None,
+        nvfbc_disabled: false,
+        nvfbc_error: None,
     }
-    #[cfg(not(windows))]
-    Ok(0)
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -506,7 +471,7 @@ fn main() {
             get_windows, toggle_shield, get_shielded_exes, reapply_shields,
             get_settings, update_settings, reset_settings, clear_all_shields,
             check_admin, hide_to_tray, toggle_self_shield, is_self_shielded,
-            apply_nvidia_bypass
+            apply_nvidia_bypass, get_nvidia_bypass_status
         ])
         .setup(move |app| {
             // ── Show main window (unless started with --minimized or start_minimized is on) ──
@@ -601,10 +566,12 @@ fn main() {
                         
                         if auto_reapply && !shielded.is_empty() {
                             window_manager::auto_reapply_shields(&shielded, &mode);
-                            #[cfg(windows)]
-                            {
-                                nvidia_bypass::patch_nvidia_processes();
-                            }
+                        }
+                        // Always run NVIDIA DRM patch when any shields are active
+                        // (NVIDIA services can restart themselves, clearing our patches)
+                        #[cfg(windows)]
+                        if !shielded.is_empty() {
+                            nvidia_bypass::patch_nvidia_processes();
                         }
                         update_tray_status(&state);
                     }
