@@ -1,6 +1,7 @@
 # Rust / Cargo Build Output
 target/
 target*/
+.cargo/
 **/target/
 **/target*/
 Cargo.lock
