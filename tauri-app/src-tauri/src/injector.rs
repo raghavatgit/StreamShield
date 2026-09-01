@@ -33,6 +33,55 @@ impl Drop for AutoCloseHandle {
     }
 }
 
+/// Grant AppContainer (UWP / Windows Store packaged apps like WhatsApp) read & execute rights
+#[cfg(windows)]
+fn grant_appcontainer_permissions(path: &std::path::Path) {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::um::winbase::LocalFree;
+    use winapi::um::winnt::{DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR};
+    use winapi::um::securitybaseapi::SetFileSecurityW;
+
+    #[link(name = "advapi32")]
+    extern "system" {
+        fn ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            StringSecurityDescriptor: *const u16,
+            StringSDRevision: u32,
+            SecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
+            SecurityDescriptorSize: *mut u32,
+        ) -> i32;
+    }
+
+    const SDDL_REVISION_1: u32 = 1;
+
+    fn wide(s: &str) -> Vec<u16> {
+        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    let path_w = wide(path.to_str().unwrap_or_default());
+    // SDDL granting Generic Read and Execute (GRGX) to:
+    // - WD: Everyone
+    // - AC: ALL APPLICATION PACKAGES (S-1-15-2-1)
+    // - RC: ALL RESTRICTED APPLICATION PACKAGES (S-1-15-2-2)
+    let sddl = wide("D:(A;;GRGX;;;WD)(A;;GRGX;;;AC)(A;;GRGX;;;RC)");
+    unsafe {
+        let mut p_sd: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+        if ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.as_ptr(),
+            SDDL_REVISION_1,
+            &mut p_sd,
+            std::ptr::null_mut(),
+        ) != 0 {
+            SetFileSecurityW(
+                path_w.as_ptr(),
+                DACL_SECURITY_INFORMATION,
+                p_sd,
+            );
+            LocalFree(p_sd as _);
+        }
+    }
+}
+
 /// Shield or unshield a window from screen capture.
 pub fn set_window_affinity(hwnd: usize, enable: bool, shield_mode: Option<&str>) -> Result<(), String> {
     #[cfg(windows)]
@@ -43,6 +92,11 @@ pub fn set_window_affinity(hwnd: usize, enable: bool, shield_mode: Option<&str>)
         if win_pid == our_pid {
             return set_affinity_direct(hwnd, enable, shield_mode);
         }
+
+        // Try direct call as first line of defense
+        let _ = set_affinity_direct(hwnd, enable, shield_mode);
+
+        // Inject DLL for in-process affinity enforcement
         inject_and_shield(win_pid, hwnd, enable, shield_mode)
     }
     #[cfg(not(windows))]
@@ -174,6 +228,7 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool, shield_mode: Option<&s
     if !dll_path.exists() {
         std::fs::write(&dll_path, DLL_BYTES)
             .map_err(|e| format!("Write DLL: {e}"))?;
+        grant_appcontainer_permissions(&dll_path);
     }
     let dll_cstr = std::ffi::CString::new(dll_path.to_str().ok_or("bad dll path")?)
         .map_err(|e| e.to_string())?;

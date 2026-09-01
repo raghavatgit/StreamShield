@@ -40,7 +40,7 @@ fn is_admin() -> bool {
 }
 
 #[cfg(windows)]
-fn relaunch_as_admin() {
+fn relaunch_as_admin(start_minimized: bool) {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use winapi::um::shellapi::ShellExecuteW;
@@ -50,8 +50,11 @@ fn relaunch_as_admin() {
     let exe_w = wide(exe.to_str().unwrap());
     let verb_w = wide("runas");
 
-    let raw_args: Vec<String> = std::env::args().skip(1).collect();
-    let is_minimized = raw_args.iter().any(|a| a == "--minimized" || a == "-m");
+    let mut raw_args: Vec<String> = std::env::args().skip(1).collect();
+    let is_minimized = start_minimized || raw_args.iter().any(|a| a == "--minimized" || a == "-m" || a.contains("minimized"));
+    if is_minimized && !raw_args.iter().any(|a| a == "--minimized" || a == "-m") {
+        raw_args.push("--minimized".to_string());
+    }
     let show_cmd = if is_minimized { SW_HIDE } else { SW_SHOW };
 
     let args_str = raw_args.join(" ");
@@ -227,10 +230,20 @@ fn toggle_shield(exe_name: String, hwnd: usize, _pid: u32, enable: bool, state: 
     {
         let mut config = state.config.lock().map_err(|e| e.to_string())?;
         let normalized = exe_name.to_lowercase();
+        // Robust case-insensitive removal of matching and variant executables (e.g. WhatsApp.exe <-> WhatsApp.Root.exe)
+        config.shielded_exes.retain(|x| {
+            let x_lower = x.to_lowercase();
+            if x_lower == normalized || x.eq_ignore_ascii_case(&exe_name) {
+                return false;
+            }
+            if !enable && normalized.starts_with("whatsapp") && x_lower.starts_with("whatsapp") {
+                return false;
+            }
+            true
+        });
+
         if enable {
             config.shielded_exes.insert(normalized);
-        } else {
-            config.shielded_exes.remove(&normalized);
         }
         save_config(&config);
     }
@@ -415,16 +428,19 @@ fn get_capture_environment() -> nvidia_bypass::CaptureEnvironment {
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 fn main() {
+    let initial_config = load_config();
+
     #[cfg(windows)]
     if !is_admin() {
-        relaunch_as_admin();
+        let args: Vec<String> = std::env::args().collect();
+        let is_minimized = args.iter().any(|a| a == "--minimized" || a == "-m" || a.contains("minimized"))
+            || initial_config.settings.start_minimized;
+        relaunch_as_admin(is_minimized);
         std::process::exit(0);
     }
 
     disable_power_throttling();
     injector::cleanup_stale_dlls();
-
-    let initial_config = load_config();
 
     tauri::Builder::default()
         .manage(AppState { config: Mutex::new(initial_config.clone()), tray_status: Mutex::new(None) })
@@ -438,7 +454,7 @@ fn main() {
             // ── Show main window (unless started with --minimized or start_minimized is on) ──
             let win = app.get_webview_window("main").ok_or("no main window")?;
             let args: Vec<String> = std::env::args().collect();
-            let is_minimized_arg = args.iter().any(|a| a == "--minimized" || a == "-m");
+            let is_minimized_arg = args.iter().any(|a| a == "--minimized" || a == "-m" || a.contains("minimized"));
             let should_start_minimized = is_minimized_arg || initial_config.settings.start_minimized;
 
             if !should_start_minimized {

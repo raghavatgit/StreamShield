@@ -76,10 +76,12 @@ fn config_path() -> PathBuf {
 
 pub fn load_config() -> ShieldConfig {
     let path = config_path();
-    std::fs::read_to_string(&path)
+    let mut config: ShieldConfig = std::fs::read_to_string(&path)
         .ok()
         .and_then(|d| serde_json::from_str(&d).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    config.shielded_exes = config.shielded_exes.into_iter().map(|s| s.to_lowercase()).collect();
+    config
 }
 
 pub fn save_config(config: &ShieldConfig) {
