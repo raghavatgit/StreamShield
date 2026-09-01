@@ -19,8 +19,7 @@
         "resizable": true,
         "center": true,
         "decorations": true,
-        "visible": false,
-        "additionalBrowserArgs": "--disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling"
+        "visible": false
       }
     ],
     "security": {
@@ -31,7 +30,7 @@
     "active": true,
     "targets": "all",
     "publisher": "Raghav Goyal",
-    "copyright": "Copyright © 2026 Raghav Goyal. All rights reserved.",
+    "copyright": "Copyright (c) 2026 Raghav Goyal. All rights reserved.",
     "shortDescription": "Stream Privacy Manager",
     "longDescription": "Selectively shield individual application windows from stream and OBS capture.",
     "icon": [
