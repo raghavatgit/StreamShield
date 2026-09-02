@@ -51,8 +51,9 @@ fn relaunch_as_admin(start_minimized: bool) {
     let verb_w = wide("runas");
 
     let mut raw_args: Vec<String> = std::env::args().skip(1).collect();
-    let is_minimized = start_minimized || raw_args.iter().any(|a| a == "--minimized" || a == "-m" || a.contains("minimized"));
-    if is_minimized && !raw_args.iter().any(|a| a == "--minimized" || a == "-m") {
+    let has_minimized_flag = raw_args.iter().any(|a| a == "--minimized" || a == "-m");
+    let is_minimized = start_minimized || has_minimized_flag;
+    if is_minimized && !has_minimized_flag {
         raw_args.push("--minimized".to_string());
     }
     let show_cmd = if is_minimized { SW_HIDE } else { SW_SHOW };
@@ -432,9 +433,11 @@ fn main() {
 
     #[cfg(windows)]
     if !is_admin() {
+        // Only the --minimized CLI flag (injected by autostart registry) triggers tray-only mode.
+        // The start_minimized *setting* only controls whether --minimized is written to the registry,
+        // so manual double-clicks always open the full window.
         let args: Vec<String> = std::env::args().collect();
-        let is_minimized = args.iter().any(|a| a == "--minimized" || a == "-m" || a.contains("minimized"))
-            || initial_config.settings.start_minimized;
+        let is_minimized = args.iter().any(|a| a == "--minimized" || a == "-m");
         relaunch_as_admin(is_minimized);
         std::process::exit(0);
     }
@@ -451,18 +454,22 @@ fn main() {
             get_capture_environment
         ])
         .setup(move |app| {
-            // ── Show main window (unless started with --minimized or start_minimized is on) ──
+            // ── Show or hide the main window ──
+            // Only the explicit --minimized CLI flag (injected by autostart registry) starts hidden.
+            // Manual launches (double-click, tray "Open") always show the window.
             let win = app.get_webview_window("main").ok_or("no main window")?;
             let args: Vec<String> = std::env::args().collect();
-            let is_minimized_arg = args.iter().any(|a| a == "--minimized" || a == "-m" || a.contains("minimized"));
-            let should_start_minimized = is_minimized_arg || initial_config.settings.start_minimized;
+            let launched_by_autostart = args.iter().any(|a| a == "--minimized" || a == "-m");
 
-            if !should_start_minimized {
+            if launched_by_autostart {
+                // Autostart: stay completely hidden — window was created with visible:false
+                // in tauri.conf.json, so we just keep it hidden. No show() call = no white flash.
+                let _ = win.hide();
+            } else {
+                // Manual launch: show the window normally
                 win.show()?;
                 win.unminimize()?;
                 win.set_focus()?;
-            } else {
-                let _ = win.hide();
             }
 
             // ── Tray menu ────────────────────────────────────────────────
