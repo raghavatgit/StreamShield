@@ -123,6 +123,11 @@ export default function App() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      // Signal the Rust backend that the UI is rendered and ready to be shown.
+      // The window starts invisible (visible:false in tauri.conf.json) and only
+      // becomes visible here, after React has mounted and data has loaded.
+      // This eliminates the white flash entirely.
+      invoke("show_main_window").catch(() => {});
     }
   }, []);
 
