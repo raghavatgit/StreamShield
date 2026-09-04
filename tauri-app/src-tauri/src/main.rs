@@ -421,19 +421,7 @@ fn is_self_shielded(window: WebviewWindow) -> bool {
     false
 }
 
-#[tauri::command]
-fn show_main_window(window: WebviewWindow) -> Result<(), String> {
-    // Only show the window if this is NOT an autostart launch.
-    // The autostart registry entry passes --minimized, so the window stays in tray.
-    let args: Vec<String> = std::env::args().collect();
-    let launched_by_autostart = args.iter().any(|a| a == "--minimized" || a == "-m");
-    if !launched_by_autostart {
-        window.show().map_err(|e| e.to_string())?;
-        window.unminimize().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
+
 
 #[tauri::command]
 fn get_capture_environment() -> nvidia_bypass::CaptureEnvironment {
@@ -465,15 +453,32 @@ fn main() {
             get_windows, toggle_shield, get_shielded_exes, reapply_shields,
             get_settings, update_settings, reset_settings, clear_all_shields,
             check_admin, hide_to_tray, toggle_self_shield, is_self_shielded,
-            get_capture_environment, show_main_window
+            get_capture_environment
         ])
         .setup(move |app| {
-            // ── Window visibility is FRONTEND-DRIVEN ──
-            // The window starts invisible (visible:false in tauri.conf.json).
-            // The React frontend calls `show_main_window` after it mounts and renders,
-            // so the user never sees a white flash. For autostart (--minimized),
-            // the command is a no-op — the window stays hidden in tray.
-            let _win = app.get_webview_window("main").ok_or("no main window")?;
+            // ── Window visibility ──
+            let win = app.get_webview_window("main").ok_or("no main window")?;
+            let args: Vec<String> = std::env::args().collect();
+            let launched_by_autostart = args.iter().any(|a| a == "--minimized" || a == "-m");
+
+            if launched_by_autostart {
+                // Autostart: force the HWND invisible at the Win32 level BEFORE
+                // WebView2 can paint its first white frame.
+                #[cfg(windows)]
+                {
+                    use winapi::um::winuser::{ShowWindow, SW_HIDE};
+                    if let Ok(hwnd) = win.hwnd() {
+                        unsafe { ShowWindow(hwnd.0 as _, SW_HIDE); }
+                    }
+                }
+                let _ = win.hide();
+            } else {
+                // Manual launch: show immediately. The HTML has inline
+                // background-color:#07090e so the first frame is dark, not white.
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
 
             // ── Tray menu ────────────────────────────────────────────────
             let show   = MenuItem::with_id(app, "show",   "🛡️  Open StreamShield", true, None::<&str>)?;
