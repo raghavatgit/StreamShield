@@ -106,3 +106,23 @@ export const IconExternalLink: React.FC<IconProps> = ({ size = 14, className = "
     <line x1="10" y1="14" x2="21" y2="3" />
   </svg>
 );
+
+export const IconMinimize: React.FC<IconProps> = ({ size = 14, className = "", color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+);
+
+export const IconMaximize: React.FC<IconProps> = ({ size = 14, className = "", color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+  </svg>
+);
+
+export const IconRestore: React.FC<IconProps> = ({ size = 14, className = "", color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M7 4h13v13H7z" rx="1.5" />
+    <path d="M4 8v12h12" />
+  </svg>
+);
+

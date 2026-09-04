@@ -109,6 +109,14 @@ html, body, #root {
   background: var(--bg-base);
   transition: background 0.25s ease, color 0.25s ease;
   overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+
+.streamshield-root.is-maximized {
+  border-radius: 0;
+  border: none;
 }
 
 .streamshield-root::before {
@@ -144,11 +152,24 @@ html, body, #root {
 .app-top-header {
   position: relative;
   z-index: 30;
-  padding: 14px 18px 12px;
+  padding: 12px 18px 12px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
   box-shadow: var(--card-shadow);
   backdrop-filter: blur(16px);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.header-action-group,
+.batch-controls,
+button,
+input,
+.theme-popover-menu,
+.theme-picker-container,
+.settings-gear-btn,
+.window-controls-group {
+  -webkit-app-region: no-drag;
 }
 
 .header-main-row {
@@ -325,6 +346,90 @@ html, body, #root {
   font-size: 12px;
   font-weight: 800;
   color: var(--primary);
+}
+
+/* Settings Gear Button */
+.settings-gear-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: var(--card-shadow);
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.settings-gear-btn:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  border-color: var(--border-active);
+  transform: rotate(20deg);
+}
+
+/* Window Controls Suite */
+.window-controls-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-card);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+.window-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 7px;
+  padding: 2px;
+  box-shadow: var(--card-shadow);
+  flex-shrink: 0;
+}
+
+.window-control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.window-control-btn:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.window-control-btn.btn-minimize:hover {
+  color: var(--primary);
+  background: var(--bg-card-shielded);
+}
+
+.window-control-btn.btn-maximize:hover {
+  color: var(--primary);
+  background: var(--bg-card-shielded);
+}
+
+.window-control-btn.btn-close:hover {
+  background: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.45);
+}
+
+.window-control-btn:active {
+  transform: scale(0.92);
 }
 
 /* Status Strip */

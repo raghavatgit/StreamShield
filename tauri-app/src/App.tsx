@@ -14,6 +14,9 @@ import {
   IconAlert,
   IconShield,
   IconExternalLink,
+  IconMinimize,
+  IconMaximize,
+  IconRestore,
 } from "./components/Icons";
 
 export type ThemeType = "discord" | "cyberpunk" | "neumorphic-white";
@@ -267,6 +270,40 @@ export default function App() {
     }
   };
 
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  useEffect(() => {
+    getCurrentWindow().isMaximized().then(setIsMaximized).catch(() => {});
+  }, []);
+
+  const handleMinimizeWindow = async () => {
+    try {
+      await invoke("minimize_window");
+    } catch {
+      try {
+        await getCurrentWindow().minimize();
+      } catch (err) {
+        console.error("Minimize error:", err);
+      }
+    }
+  };
+
+  const handleToggleMaximize = async () => {
+    try {
+      const nextMax = await invoke<boolean>("toggle_maximize_window");
+      setIsMaximized(nextMax);
+    } catch {
+      try {
+        const win = getCurrentWindow();
+        await win.toggleMaximize();
+        const nextMax = await win.isMaximized();
+        setIsMaximized(nextMax);
+      } catch (err) {
+        console.error("Maximize error:", err);
+      }
+    }
+  };
+
   const handleHideToTray = async () => {
     try {
       await invoke("hide_to_tray");
@@ -329,17 +366,21 @@ export default function App() {
 
   return (
     <div
-      className="streamshield-root"
+      className={`streamshield-root ${isMaximized ? "is-maximized" : ""}`}
       onClick={() => themeMenuOpen && setThemeMenuOpen(false)}
     >
       {/* Top Header */}
-      <header className="app-top-header">
-        <div className="header-main-row">
-          <div className="header-logo-group">
-            <img src="/logo.png" className="app-header-logo" alt="StreamShield Logo" />
-            <div className="header-text-block">
-              <div className="header-app-title">StreamShield</div>
-              <div className="header-app-subtitle">Stream Privacy Manager</div>
+      <header
+        className="app-top-header"
+        data-tauri-drag-region
+        onDoubleClick={handleToggleMaximize}
+      >
+        <div className="header-main-row" data-tauri-drag-region>
+          <div className="header-logo-group" data-tauri-drag-region>
+            <img src="/logo.png" className="app-header-logo" alt="StreamShield Logo" data-tauri-drag-region />
+            <div className="header-text-block" data-tauri-drag-region>
+              <div className="header-app-title" data-tauri-drag-region>StreamShield</div>
+              <div className="header-app-subtitle" data-tauri-drag-region>Stream Privacy Manager</div>
             </div>
           </div>
 
@@ -389,6 +430,36 @@ export default function App() {
             >
               <IconGear size={16} />
             </button>
+
+            {/* Window Controls Divider & Suite */}
+            <div className="window-controls-divider" />
+
+            <div className="window-controls-group" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="window-control-btn btn-minimize"
+                onClick={handleMinimizeWindow}
+                title="Minimize Window"
+                aria-label="Minimize"
+              >
+                <IconMinimize size={13} />
+              </button>
+              <button
+                className="window-control-btn btn-maximize"
+                onClick={handleToggleMaximize}
+                title={isMaximized ? "Restore Window" : "Maximize Window"}
+                aria-label={isMaximized ? "Restore" : "Maximize"}
+              >
+                {isMaximized ? <IconRestore size={13} /> : <IconMaximize size={13} />}
+              </button>
+              <button
+                className="window-control-btn btn-close"
+                onClick={handleHideToTray}
+                title="Hide to System Tray"
+                aria-label="Close"
+              >
+                <IconClose size={13} />
+              </button>
+            </div>
           </div>
         </div>
 

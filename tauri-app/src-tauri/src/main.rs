@@ -385,6 +385,23 @@ fn hide_to_tray(window: WebviewWindow) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn minimize_window(window: WebviewWindow) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn toggle_maximize_window(window: WebviewWindow) -> Result<bool, String> {
+    let is_max = window.is_maximized().map_err(|e| e.to_string())?;
+    if is_max {
+        window.unmaximize().map_err(|e| e.to_string())?;
+        Ok(false)
+    } else {
+        window.maximize().map_err(|e| e.to_string())?;
+        Ok(true)
+    }
+}
+
+#[tauri::command]
 fn toggle_self_shield(enable: bool, window: WebviewWindow) -> Result<bool, String> {
     #[cfg(windows)]
     {
@@ -450,7 +467,7 @@ fn create_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::
         .min_inner_size(460.0, 620.0)
         .resizable(true)
         .center()
-        .decorations(true)
+        .decorations(false)
         .visible(true)
         .build()?;
 
@@ -480,8 +497,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_windows, toggle_shield, get_shielded_exes, reapply_shields,
             get_settings, update_settings, reset_settings, clear_all_shields,
-            check_admin, hide_to_tray, toggle_self_shield, is_self_shielded,
-            get_capture_environment
+            check_admin, hide_to_tray, minimize_window, toggle_maximize_window,
+            toggle_self_shield, is_self_shielded, get_capture_environment
         ])
         .setup(move |app| {
             let args: Vec<String> = std::env::args().collect();
