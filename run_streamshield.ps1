@@ -3,7 +3,7 @@
 param([switch]$Rebuild)
 
 $root = $PSScriptRoot
-$exe = (Get-ChildItem -Path "$root\target*\release\streamshield.exe", "$root\target*\debug\streamshield.exe", "$root\releases\*\streamshield.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+$exe = (Get-ChildItem -Path "$root\target\release\streamshield.exe", "$root\target\debug\streamshield.exe", "$root\releases\*\streamshield.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
 
 if ($Rebuild -or (-not $exe)) {
     Write-Host "Building StreamShield..."
@@ -11,7 +11,7 @@ if ($Rebuild -or (-not $exe)) {
     npm run build
     npx tauri build
     Pop-Location
-    $exe = (Get-ChildItem -Path "$root\target*\release\streamshield.exe", "$root\target*\debug\streamshield.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+    $exe = (Get-ChildItem -Path "$root\target\release\streamshield.exe", "$root\target\debug\streamshield.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
 }
 
 if (-not (Test-Path $exe)) {
