@@ -9,19 +9,7 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
-    "windows": [
-      {
-        "title": "StreamShield",
-        "width": 540,
-        "height": 780,
-        "minWidth": 460,
-        "minHeight": 620,
-        "resizable": true,
-        "center": true,
-        "decorations": true,
-        "visible": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

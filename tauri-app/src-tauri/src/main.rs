@@ -10,7 +10,8 @@ use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager, State, WebviewWindow,
+    webview::WebviewWindowBuilder,
+    Emitter, Manager, State, WebviewUrl, WebviewWindow,
 };
 use window_manager::WindowInfo;
 use config::{load_config, save_config, AppSettings, ShieldConfig};
@@ -430,6 +431,33 @@ fn get_capture_environment() -> nvidia_bypass::CaptureEnvironment {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
+/// Create the main webview window on demand.
+/// Called immediately for manual launches, or lazily when the user clicks
+/// the tray icon after an autostart boot (where no window is created initially
+/// to avoid the white flash).
+fn create_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    // If it already exists, just show it
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+        return Ok(());
+    }
+
+    let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+        .title("StreamShield")
+        .inner_size(540.0, 780.0)
+        .min_inner_size(460.0, 620.0)
+        .resizable(true)
+        .center()
+        .decorations(true)
+        .visible(true)
+        .build()?;
+
+    let _ = win.set_focus();
+    Ok(())
+}
+
 fn main() {
     let initial_config = load_config();
 
@@ -456,29 +484,14 @@ fn main() {
             get_capture_environment
         ])
         .setup(move |app| {
-            // ── Window visibility ──
-            let win = app.get_webview_window("main").ok_or("no main window")?;
             let args: Vec<String> = std::env::args().collect();
             let launched_by_autostart = args.iter().any(|a| a == "--minimized" || a == "-m");
 
-            if launched_by_autostart {
-                // Autostart: force the HWND invisible at the Win32 level BEFORE
-                // WebView2 can paint its first white frame.
-                #[cfg(windows)]
-                {
-                    use winapi::um::winuser::{ShowWindow, SW_HIDE};
-                    if let Ok(hwnd) = win.hwnd() {
-                        unsafe { ShowWindow(hwnd.0 as _, SW_HIDE); }
-                    }
-                }
-                let _ = win.hide();
-            } else {
-                // Manual launch: show immediately. The HTML has inline
-                // background-color:#07090e so the first frame is dark, not white.
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
+            if !launched_by_autostart {
+                // Manual launch: create and show the window immediately.
+                create_main_window(app.handle())?;
             }
+            // Autostart: NO window created = NO white flash. Just tray icon.
 
             // ── Tray menu ────────────────────────────────────────────────
             let show   = MenuItem::with_id(app, "show",   "🛡️  Open StreamShield", true, None::<&str>)?;
@@ -506,7 +519,7 @@ fn main() {
                 .tooltip("StreamShield - Stream Privacy Manager")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
-                // Left click: toggle window
+                // Left click: toggle window (create on demand if needed)
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
@@ -523,6 +536,9 @@ fn main() {
                                 let _ = w.set_focus();
                                 let _ = w.emit("app_wake", ());
                             }
+                        } else {
+                            // Window doesn't exist yet (autostart mode) — create it now
+                            let _ = create_main_window(app);
                         }
                     }
                 })
@@ -534,6 +550,8 @@ fn main() {
                             let _ = w.unminimize();
                             let _ = w.set_focus();
                             let _ = w.emit("app_wake", ());
+                        } else {
+                            let _ = create_main_window(app);
                         }
                     }
                     "quit" => app.exit(0),
