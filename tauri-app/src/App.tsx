@@ -64,6 +64,7 @@ export default function App() {
   const [toast, setToast] = useState<{ message: string; type?: "error" | "info" | "success" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLoadTime = useRef<number>(0);
+  const hasShownWindow = useRef(false);
 
   // Apply theme to document root
   useEffect(() => {
@@ -123,11 +124,12 @@ export default function App() {
     } finally {
       setLoading(false);
       setRefreshing(false);
-      // Signal the Rust backend that the UI is rendered and ready to be shown.
-      // The window starts invisible (visible:false in tauri.conf.json) and only
-      // becomes visible here, after React has mounted and data has loaded.
-      // This eliminates the white flash entirely.
-      invoke("show_main_window").catch(() => {});
+      // Show the window ONCE after the very first successful render.
+      // Uses a ref guard so subsequent poll cycles don't steal focus.
+      if (!hasShownWindow.current) {
+        hasShownWindow.current = true;
+        invoke("show_main_window").catch(() => {});
+      }
     }
   }, []);
 
