@@ -1,6 +1,22 @@
 //! Shield DLL - injected into target processes to call SetWindowDisplayAffinity.
 //! shield_window is called as a thread entry point via CreateRemoteThread,
 //! so it MUST match LPTHREAD_START_ROUTINE: fn(LPVOID) -> DWORD.
+//!
+//! # Technical Overview
+//!
+//! When an application is shielded, this DLL executes inside the target process
+//! context and invokes `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)`.
+//! This instructs the Windows Desktop Window Manager (DWM) compositing pipeline
+//! to exclude the window's visual contents from capture buffers (e.g. OBS Studio,
+//! Discord, Medal) while leaving it fully rendered on physical display outputs.
+//!
+//! # Fallback Mechanics
+//!
+//! * `WDA_EXCLUDEFROMCAPTURE` (0x00000011): Fully masks the window from capture
+//!   surfaces on Windows 10 Version 2004 (Build 19041) and newer (including Windows 11).
+//! * `WDA_MONITOR` (0x00000001): Fallback affinity mode that renders blacked-out
+//!   rectangles on capture feeds for older Windows compositors.
+//! * `WDA_NONE` (0x00000000): Restores normal capture compositing.
 
 #[cfg(windows)]
 mod imp {
@@ -19,7 +35,11 @@ mod imp {
     const WDA_EXCLUDEFROMCAPTURE: u32 = 0x00000011;
     const WDA_MONITOR: u32 = 0x00000001;
 
-    /// Apply display affinity to a window. Only force-redraws if affinity actually changed.
+    /// Apply display affinity to a window handle.
+    ///
+    /// Validates current affinity to avoid redundant DWM state updates.
+    /// On success, forces a DWM cache invalidation pass using `SWP_FRAMECHANGED`
+    /// and `RDW_UPDATENOW` to guarantee real-time feed updates without window resize.
     unsafe fn apply_affinity_to_hwnd(hwnd: HWND, affinity: u32, enable: bool) -> u32 {
         // Check current affinity first - skip if already at desired value
         let mut current: u32 = 0;
@@ -55,6 +75,7 @@ mod imp {
         res as u32
     }
 
+    /// Windows enumeration callback targeting visible sibling windows for the target PID.
     unsafe extern "system" fn enum_all_process_windows(hwnd: HWND, lparam: LPARAM) -> BOOL {
         // CRITICAL: Only process visible windows - hidden/internal windows must not be
         // force-redrawn or they manifest as blank white ghost rectangles on screen.
@@ -71,11 +92,12 @@ mod imp {
         1
     }
 
-    /// Called as a remote thread entry point.
-    /// param encodes:
-    /// - bit 63: enable (1) / disable (0)
-    /// - bit 62: prefer monitor mode (1) / exclude mode (0)
-    /// - bits 0-61: primary HWND value
+    /// Remote thread entry point matching LPTHREAD_START_ROUTINE signature.
+    ///
+    /// Bit-packed parameter layout:
+    /// - Bit 63: Target state: 1 = Enable shield, 0 = Disable shield
+    /// - Bit 62: Mode flag: 1 = Prefer WDA_MONITOR, 0 = Prefer WDA_EXCLUDEFROMCAPTURE
+    /// - Bits 0-61: Target window handle (HWND) value
     #[no_mangle]
     pub unsafe extern "system" fn shield_window(param: *mut std::ffi::c_void) -> u32 {
         let val = param as usize;
