@@ -1,6 +1,8 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap");
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -11,7 +13,8 @@
    THEME PALETTES (3 CURATED PRESETS: CYBERPUNK, DISCORD DARK, NEUMORPHIC WHITE)
    ========================================================================== */
 
-:root, [data-theme="cyberpunk"] {
+:root,
+[data-theme="cyberpunk"] {
   --bg-base: #07090e;
   --bg-surface: #0d121c;
   --bg-card: rgba(16, 23, 38, 0.75);
@@ -90,7 +93,9 @@
    APP SHELL & AMBIENT GLOW
    ========================================================================== */
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   width: 100%;
   overflow: hidden;
@@ -152,7 +157,7 @@ html, body, #root {
 .app-top-header {
   position: relative;
   z-index: 30;
-  padding: 12px 18px 12px;
+  padding: 10px 14px 8px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
   box-shadow: var(--card-shadow);
@@ -176,44 +181,31 @@ input,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .header-logo-group {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 9px;
 }
 
 .app-header-logo {
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   object-fit: cover;
   flex-shrink: 0;
-  box-shadow: 0 0 14px var(--glow-accent);
+  box-shadow: 0 0 10px var(--glow-accent);
   border: 1px solid var(--border-card);
 }
 
-.header-text-block {
-  display: flex;
-  flex-direction: column;
-}
-
 .header-app-title {
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: -0.3px;
-  color: var(--text-primary);
-  line-height: 1.2;
-}
-
-.header-app-subtitle {
-  font-size: 10.5px;
+  font-size: 14.5px;
   font-weight: 700;
-  color: var(--primary);
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
+  letter-spacing: -0.2px;
+  color: var(--text-primary);
+  line-height: 1;
 }
 
 .header-action-group {
@@ -281,8 +273,15 @@ input,
 }
 
 @keyframes menuFadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .theme-popover-title {
@@ -528,8 +527,13 @@ input,
 }
 
 @keyframes spinWheel {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .admin-status-banner {
@@ -914,13 +918,13 @@ input,
   transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.toggle-control input:checked + .toggle-rail {
+.toggle-control input:checked+.toggle-rail {
   background: var(--toggle-rail-on);
   border-color: var(--border-active);
   box-shadow: 0 0 10px var(--glow-accent);
 }
 
-.toggle-control input:checked + .toggle-rail .toggle-knob {
+.toggle-control input:checked+.toggle-rail .toggle-knob {
   transform: translateX(18px);
   background: #ffffff;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.45);
@@ -975,8 +979,13 @@ input,
 }
 
 @keyframes cardShimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* ==========================================================================
@@ -1129,13 +1138,27 @@ input,
 }
 
 @keyframes toastPop {
-  from { opacity: 0; transform: translate(-50%, 10px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 @keyframes toastFadeOut {
-  from { opacity: 1; transform: translate(-50%, 0); }
-  to { opacity: 0; transform: translate(-50%, 8px); }
+  from {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
 }
 
 .floating-toast.success {
@@ -1258,8 +1281,13 @@ input,
 }
 
 @keyframes modalFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .settings-modal-card {
@@ -1277,8 +1305,15 @@ input,
 }
 
 @keyframes modalSlideUp {
-  from { opacity: 0; transform: translateY(16px) scale(0.97); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .settings-modal-header {
@@ -1940,6 +1975,3 @@ input,
   border-color: #bfdbfe;
   color: #1e40af;
 }
-
-
-

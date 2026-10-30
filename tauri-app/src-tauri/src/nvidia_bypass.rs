@@ -52,9 +52,16 @@ pub fn detect_capture_environment() -> CaptureEnvironment {
         "discordptb.exe",
     ];
 
+    let medal_targets = [
+        "medal.exe",
+        "medalencoder.exe",
+        "medaloverlay.exe",
+    ];
+
     let mut nvidia_found = false;
     let mut obs_found = false;
     let mut discord_found = false;
+    let mut medal_found = false;
 
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -77,6 +84,9 @@ pub fn detect_capture_environment() -> CaptureEnvironment {
                     if discord_targets.iter().any(|&t| exe_name == t) {
                         discord_found = true;
                     }
+                    if medal_targets.iter().any(|&t| exe_name == t) {
+                        medal_found = true;
+                    }
 
                     if Process32NextW(snapshot, &mut pe) == 0 {
                         break;
@@ -89,10 +99,11 @@ pub fn detect_capture_environment() -> CaptureEnvironment {
 
     let mpo_active = is_mpo_fix_active();
 
-    let (recommended_mode, summary) = if nvidia_found {
+    let (recommended_mode, summary) = if nvidia_found || medal_found {
+        let name = if nvidia_found { "NVIDIA ShadowPlay" } else { "Medal.tv" };
         (
             "monitor".to_string(),
-            "NVIDIA ShadowPlay active. Black Screen Mask recommended for 100% capture compatibility.".to_string()
+            format!("{name} active. Black Screen Mask recommended for 100% capture compatibility.")
         )
     } else if obs_found || discord_found {
         (

@@ -79,11 +79,67 @@ fn relaunch_as_admin(start_minimized: bool) {
 fn disable_power_throttling() {
     use winapi::um::winbase::SetThreadExecutionState;
     use winapi::um::winnt::{ES_CONTINUOUS, ES_SYSTEM_REQUIRED};
+    use winapi::um::processthreadsapi::{GetCurrentProcess, SetProcessInformation};
+
+    #[allow(non_snake_case)]
+    #[repr(C)]
+    struct PROCESS_POWER_THROTTLING_STATE {
+        Version: u32,
+        ControlMask: u32,
+        StateMask: u32,
+    }
+
+    const PROCESS_POWER_THROTTLING: u32 = 0x2A;
+    const PROCESS_POWER_THROTTLING_CURRENT_VERSION: u32 = 1;
+    const PROCESS_POWER_THROTTLING_EXECUTION_SPEED: u32 = 0x1;
+
     unsafe {
         // Prevent Windows from suspending background watchdog thread and timer execution
         SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
+
+        // Disable Windows 11 EcoQoS / Efficiency Mode on StreamShield process
+        let mut throttling = PROCESS_POWER_THROTTLING_STATE {
+            Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+            ControlMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+            StateMask: 0,
+        };
+        SetProcessInformation(
+            GetCurrentProcess(),
+            PROCESS_POWER_THROTTLING as _,
+            &mut throttling as *mut _ as *mut _,
+            std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
+        );
     }
 }
+
+#[cfg(windows)]
+fn ensure_single_instance() -> bool {
+    use winapi::um::synchapi::CreateMutexW;
+    use winapi::um::errhandlingapi::GetLastError;
+    use winapi::shared::winerror::ERROR_ALREADY_EXISTS;
+    use winapi::um::winuser::{FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE};
+
+    let name: Vec<u16> = "Global\\StreamShield_SingleInstance_Mutex\0".encode_utf16().collect();
+    let handle = unsafe { CreateMutexW(std::ptr::null_mut(), 1, name.as_ptr()) };
+    if handle.is_null() || unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+        // Bring existing window to front if it exists
+        let title: Vec<u16> = "StreamShield\0".encode_utf16().collect();
+        let hwnd = unsafe { FindWindowW(std::ptr::null(), title.as_ptr()) };
+        if !hwnd.is_null() {
+            unsafe {
+                ShowWindow(hwnd, SW_RESTORE);
+                SetForegroundWindow(hwnd);
+            }
+        }
+        return false;
+    }
+    // Prevent compiler warning for copy type
+    let _ = handle;
+    true
+}
+
+#[cfg(not(windows))]
+fn ensure_single_instance() -> bool { true }
 
 #[cfg(not(windows))]
 fn disable_power_throttling() {}
@@ -463,12 +519,13 @@ fn create_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::
 
     let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
         .title("StreamShield")
-        .inner_size(540.0, 780.0)
-        .min_inner_size(460.0, 620.0)
+        .inner_size(520.0, 720.0)
+        .min_inner_size(440.0, 580.0)
         .resizable(true)
         .center()
         .decorations(false)
         .visible(true)
+        .additional_browser_args("--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows")
         .build()?;
 
     let _ = win.set_focus();
@@ -476,6 +533,11 @@ fn create_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::
 }
 
 fn main() {
+    // Enforce strict single-instance guard before anything else
+    if !ensure_single_instance() {
+        std::process::exit(0);
+    }
+
     let initial_config = load_config();
 
     #[cfg(windows)]
@@ -533,7 +595,7 @@ fn main() {
 
             TrayIconBuilder::with_id("main")
                 .icon(icon)
-                .tooltip("StreamShield - Stream Privacy Manager")
+                .tooltip("StreamShield")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 // Left click: toggle window (create on demand if needed)
@@ -571,7 +633,10 @@ fn main() {
                             let _ = create_main_window(app);
                         }
                     }
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        let _ = app.remove_tray_by_id("main");
+                        app.exit(0);
+                    }
                     _ => {}
                 })
                 .build(app)?;

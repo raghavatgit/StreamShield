@@ -136,7 +136,10 @@ export default function App() {
     let interval: ReturnType<typeof setInterval> | null = null;
     if (settings.poll_interval_ms > 0) {
       interval = setInterval(() => {
-        loadWindows();
+        // Only run frontend poll when window is visible to save resources
+        if (document.visibilityState === "visible") {
+          loadWindows();
+        }
       }, settings.poll_interval_ms);
     }
 
@@ -377,11 +380,8 @@ export default function App() {
       >
         <div className="header-main-row" data-tauri-drag-region>
           <div className="header-logo-group" data-tauri-drag-region>
-            <img src="/logo.png" className="app-header-logo" alt="StreamShield Logo" data-tauri-drag-region />
-            <div className="header-text-block" data-tauri-drag-region>
-              <div className="header-app-title" data-tauri-drag-region>StreamShield</div>
-              <div className="header-app-subtitle" data-tauri-drag-region>Stream Privacy Manager</div>
-            </div>
+            <img src="/logo.png" className="app-header-logo" alt="StreamShield" data-tauri-drag-region />
+            <span className="header-app-title" data-tauri-drag-region>StreamShield</span>
           </div>
 
           <div className="header-action-group">
@@ -592,7 +592,7 @@ export default function App() {
             <div className="coverage-bar-value" style={{ width: `${percentage}%` }} />
           </div>
           <span className="coverage-text">
-            <strong>{shieldedCount}</strong> / {windows.length} Protected ({percentage}%)
+            <strong>{shieldedCount}</strong> of {windows.length} Protected
           </span>
         </div>
 
@@ -603,22 +603,12 @@ export default function App() {
             onClick={handleToggleSelfShield}
             title={
               isSelfShielded
-                ? "StreamShield is hidden from capture (Click to make visible)"
-                : "Hide StreamShield window itself from screen capture/recording"
+                ? "StreamShield is hidden from capture"
+                : "Hide StreamShield window itself from screen capture"
             }
           >
             <span className="stealth-indicator-dot" />
-            <span className="stealth-label">App Stealth: {isSelfShielded ? "ON" : "OFF"}</span>
-          </button>
-
-          {/* Tray Minimize Button */}
-          <button
-            className="tray-dock-btn"
-            onClick={handleHideToTray}
-            title="Minimize StreamShield to system tray"
-          >
-            <span>Tray</span>
-            <IconExternalLink size={12} className="dock-arrow" />
+            <span className="stealth-label">Stealth: {isSelfShielded ? "ON" : "OFF"}</span>
           </button>
         </div>
       </footer>

@@ -1,4 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
+use std::collections::HashMap;
+
+// Process-lifetime caches to eliminate repeated GDI extractions and PNG/Base64 encoding churn
+static GLOBAL_ICON_CACHE: Mutex<Option<HashMap<String, Option<String>>>> = Mutex::new(None);
+static GLOBAL_PID_CACHE: Mutex<Option<HashMap<u32, (String, String)>>> = Mutex::new(None);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WindowInfo {
@@ -26,7 +32,7 @@ pub fn enumerate_windows(
     };
     use winapi::um::dwmapi::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWM_CLOAKED_APP, DWM_CLOAKED_SHELL, DWM_CLOAKED_INHERITED};
 
-    // System processes that should never be listed in the app
+    // System processes and capture/recording tools that should never be listed in the app
     const EXCLUDED_PROCESSES: &[&str] = &[
         "textinputhost.exe",
         "shellexperiencehost.exe",
@@ -41,6 +47,17 @@ pub fn enumerate_windows(
         "svchost.exe",
         "streamshield.exe",
         "taskmgr.exe",
+        // Capture, recording and clipping tools that should never be shielded
+        "medal.exe",
+        "medalencoder.exe",
+        "medaloverlay.exe",
+        "obs64.exe",
+        "obs32.exe",
+        "obs.exe",
+        "streamlabs obs.exe",
+        "nvidia share.exe",
+        "nvcontainer.exe",
+        "nvsphelper64.exe",
     ];
 
     unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
@@ -65,6 +82,18 @@ pub fn enumerate_windows(
             return 1;
         }
 
+        // Filter out 0x0 or off-screen background helper windows (e.g. background Medal/Discord windows)
+        use winapi::shared::windef::RECT;
+        use winapi::um::winuser::GetWindowRect;
+        let mut rect: RECT = std::mem::zeroed();
+        if GetWindowRect(hwnd, &mut rect) != 0 {
+            let width = rect.right - rect.left;
+            let height = rect.bottom - rect.top;
+            if width <= 0 || height <= 0 {
+                return 1;
+            }
+        }
+
         // Filter out Cloaked UWP/Windows 10/11 dummy windows
         let mut cloaked: u32 = 0;
         let hr = DwmGetWindowAttribute(
@@ -87,8 +116,12 @@ pub fn enumerate_windows(
 
     let mut results: Vec<WindowInfo> = Vec::new();
     let mut seen_exe: HashSet<String> = HashSet::new();
-    let mut pid_exe_cache: HashMap<u32, (String, String)> = HashMap::new(); // PID -> (exe_name, full_path)
-    let mut icon_cache: HashMap<String, Option<String>> = HashMap::new(); // exe_name -> base64_icon
+
+    let mut icon_cache_guard = GLOBAL_ICON_CACHE.lock().unwrap();
+    let icon_cache = icon_cache_guard.get_or_insert_with(HashMap::new);
+
+    let mut pid_cache_guard = GLOBAL_PID_CACHE.lock().unwrap();
+    let pid_cache = pid_cache_guard.get_or_insert_with(HashMap::new);
 
     for hwnd in hwnds {
         let mut title_buf = vec![0u16; 512];
@@ -101,7 +134,7 @@ pub fn enumerate_windows(
         unsafe { GetWindowThreadProcessId(hwnd, &mut pid) };
         if pid == 0 { continue; }
 
-        let (exe_name, full_path) = pid_exe_cache.entry(pid).or_insert_with(|| get_process_info(pid)).clone();
+        let (exe_name, full_path) = pid_cache.entry(pid).or_insert_with(|| get_process_info(pid)).clone();
         let exe_lower = exe_name.to_lowercase();
 
         // Check against system exclusion list
