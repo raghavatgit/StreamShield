@@ -317,6 +317,26 @@ fn create_tray_menu(app: &tauri::AppHandle) -> Result<Menu<tauri::Wry>, Box<dyn 
     let compact_label = if is_compact { "✓  Compact Mode" } else { "○  Compact Mode" };
     let m_compact = MenuItem::with_id(app, "tray_toggle_compact", compact_label, true, None::<&str>)?;
 
+    // ── Desktop Widget Submenu ──
+    let (widget_en, widget_st) = state.config.lock().map(|c| {
+        (c.settings.widget_enabled, c.settings.widget_style.clone())
+    }).unwrap_or_default();
+
+    let w_toggle_label = if widget_en { "✓  Enable Desktop Widget" } else { "○  Enable Desktop Widget" };
+    let m_widget_toggle = MenuItem::with_id(app, "tray_widget_toggle", w_toggle_label, true, None::<&str>)?;
+    let sep_w = PredefinedMenuItem::separator(app)?;
+    let m_w_pill = MenuItem::with_id(app, "tray_widget_style_pill", if widget_st == "pill" { "●  Dynamic Pill" } else { "○  Dynamic Pill" }, true, None::<&str>)?;
+    let m_w_dock = MenuItem::with_id(app, "tray_widget_style_dock", if widget_st == "dock" { "●  Compact Dock" } else { "○  Compact Dock" }, true, None::<&str>)?;
+    let m_w_badge = MenuItem::with_id(app, "tray_widget_style_badge", if widget_st == "badge" { "●  Corner Badge" } else { "○  Corner Badge" }, true, None::<&str>)?;
+
+    let widget_submenu = Submenu::with_items(app, "🖥️  Desktop Widget", true, &[
+        &m_widget_toggle,
+        &sep_w,
+        &m_w_pill,
+        &m_w_dock,
+        &m_w_badge,
+    ])?;
+
     let sep3 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit StreamShield", true, None::<&str>)?;
 
@@ -329,6 +349,7 @@ fn create_tray_menu(app: &tauri::AppHandle) -> Result<Menu<tauri::Wry>, Box<dyn 
         &quick_actions,
         &mode_submenu,
         &m_compact,
+        &widget_submenu,
         &sep3,
         &quit,
     ])?;
@@ -482,6 +503,7 @@ fn update_settings(settings: AppSettings, state: State<AppState>, app: tauri::Ap
 
     update_tray_status(&state);
     let _ = rebuild_tray_menu(&app);
+    let _ = open_or_update_widget(&app);
     Ok(settings)
 }
 
@@ -502,6 +524,7 @@ fn reset_settings(state: State<AppState>, app: tauri::AppHandle) -> Result<AppSe
 
     update_tray_status(&state);
     let _ = rebuild_tray_menu(&app);
+    let _ = open_or_update_widget(&app);
     Ok(default_settings)
 }
 
@@ -635,6 +658,133 @@ fn install_update_silent(download_url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn start_window_drag(app: tauri::AppHandle, window_label: Option<String>) {
+    let label = window_label.unwrap_or_else(|| "main".to_string());
+    if let Some(w) = app.get_webview_window(&label) {
+        #[cfg(windows)]
+        {
+            if let Ok(hwnd) = w.hwnd() {
+                use winapi::um::winuser::{ReleaseCapture, SendMessageW, WM_NCLBUTTONDOWN, HTCAPTION};
+                unsafe {
+                    ReleaseCapture();
+                    SendMessageW(hwnd.0 as _, WM_NCLBUTTONDOWN, HTCAPTION as usize, 0);
+                }
+                return;
+            }
+        }
+        let _ = w.start_dragging();
+    }
+}
+
+fn get_widget_dimensions(style: &str) -> (f64, f64) {
+    match style {
+        "dock" => (240.0, 180.0),
+        "badge" => (52.0, 52.0),
+        _ => (280.0, 48.0), // "pill"
+    }
+}
+
+fn open_or_update_widget(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let (enabled, style, always_on_top, stealth) = {
+        let state = match app.try_state::<AppState>() {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+        let cfg = match state.config.lock() {
+            Ok(c) => c,
+            Err(_) => return Ok(()),
+        };
+        (
+            cfg.settings.widget_enabled,
+            cfg.settings.widget_style.clone(),
+            cfg.settings.widget_always_on_top,
+            cfg.settings.widget_stealth,
+        )
+    };
+
+    if !enabled {
+        if let Some(w) = app.get_webview_window("widget") {
+            let _ = w.close();
+        }
+        return Ok(());
+    }
+
+    let (w, h) = get_widget_dimensions(&style);
+
+    if let Some(win) = app.get_webview_window("widget") {
+        let _ = win.set_size(Size::Logical(LogicalSize::new(w, h)));
+        let _ = win.set_always_on_top(always_on_top);
+        let _ = win.show();
+        let _ = win.emit("widget_style_changed", style);
+        return Ok(());
+    }
+
+    let mut builder = WebviewWindowBuilder::new(
+        app,
+        "widget",
+        WebviewUrl::App("index.html?mode=widget".into()),
+    )
+    .title("StreamShield Widget")
+    .inner_size(w, h)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(always_on_top)
+    .skip_taskbar(true)
+    .resizable(false)
+    .visible(true)
+    .shadow(false)
+    .additional_browser_args("--disable-background-timer-throttling --disable-renderer-backgrounding");
+
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone())?;
+    }
+
+    let win = builder.build()?;
+
+    if stealth {
+        #[cfg(windows)]
+        if let Ok(hwnd) = win.hwnd() {
+            let _ = injector::set_window_affinity(hwnd.0 as _, true, Some("exclude"));
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    create_main_window(&app).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn toggle_widget(app: tauri::AppHandle, enable: Option<bool>, style: Option<String>) -> Result<bool, String> {
+    let new_enabled = if let Some(state) = app.try_state::<AppState>() {
+        let mut cfg = match state.config.lock() {
+            Ok(c) => c,
+            Err(_) => return Err("Lock failed".into()),
+        };
+        if let Some(e) = enable {
+            cfg.settings.widget_enabled = e;
+        } else {
+            cfg.settings.widget_enabled = !cfg.settings.widget_enabled;
+        }
+        if let Some(s) = style {
+            cfg.settings.widget_style = s;
+        }
+        let en = cfg.settings.widget_enabled;
+        let _ = save_config(&cfg);
+        en
+    } else {
+        false
+    };
+
+    let _ = open_or_update_widget(&app);
+    let _ = rebuild_tray_menu(&app);
+    let _ = app.emit("widget_state_changed", new_enabled);
+    Ok(new_enabled)
+}
+
+#[tauri::command]
 fn get_capture_environment() -> nvidia_bypass::CaptureEnvironment {
     nvidia_bypass::detect_capture_environment()
 }
@@ -739,7 +889,8 @@ fn main() {
             get_settings, update_settings, reset_settings, clear_all_shields,
             check_admin, hide_to_tray, minimize_window, toggle_maximize_window,
             toggle_self_shield, is_self_shielded, get_capture_environment,
-            open_external_url, install_update_silent, set_compact_mode
+            open_external_url, install_update_silent, set_compact_mode,
+            start_window_drag, toggle_widget, show_main_window
         ])
         .setup(move |app| {
             let args: Vec<String> = std::env::args().collect();
@@ -750,6 +901,9 @@ fn main() {
                 create_main_window(app.handle())?;
             }
             // Autostart: NO window created = NO white flash. Just tray icon.
+
+            // Restore desktop widget if configured to be enabled
+            let _ = open_or_update_widget(app.handle());
 
             // ── Dynamic Tray menu with toggleable options ────────────────
             let menu = create_tray_menu(app.handle())?;
@@ -922,6 +1076,18 @@ fn main() {
                                     let _ = w.emit("tray_action_completed", "compact_toggled");
                                 }
                             }
+                        }
+                        "tray_widget_toggle" => {
+                            let _ = toggle_widget(app.clone(), None, None);
+                        }
+                        "tray_widget_style_pill" => {
+                            let _ = toggle_widget(app.clone(), Some(true), Some("pill".to_string()));
+                        }
+                        "tray_widget_style_dock" => {
+                            let _ = toggle_widget(app.clone(), Some(true), Some("dock".to_string()));
+                        }
+                        "tray_widget_style_badge" => {
+                            let _ = toggle_widget(app.clone(), Some(true), Some("badge".to_string()));
                         }
                         "quit" => {
                             let _ = app.remove_tray_by_id("main");

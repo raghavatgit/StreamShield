@@ -22,6 +22,7 @@ import {
   IconEyeOff,
   IconCompact,
   IconExpand,
+  IconWidget,
 } from "./components/Icons";
 import { ThemeType, THEMES, applyDynamicTheme } from "./utils/themeEngine";
 
@@ -46,6 +47,10 @@ export default function App() {
     confirm_batch: false,
     mpo_fix: false,
     self_stealth: false,
+    widget_enabled: false,
+    widget_style: "pill",
+    widget_always_on_top: true,
+    widget_stealth: true,
   });
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -106,7 +111,7 @@ export default function App() {
         showToast(`Update v${info.latestVersion} available!`, "success");
       } else {
         setUpdateInfo(null);
-        showToast("StreamShield is up to date (v0.2.2)", "info");
+        showToast("StreamShield is up to date (v0.2.3)", "info");
       }
     } catch {
       showToast("Could not connect to update server", "error");
@@ -229,6 +234,10 @@ export default function App() {
       }
     });
 
+    const unlistenWidget = listen<boolean>("widget_state_changed", (event) => {
+      setSettings((prev) => ({ ...prev, widget_enabled: event.payload }));
+    });
+
     return () => {
       if (interval) clearInterval(interval);
       window.removeEventListener("focus", onFocus);
@@ -236,8 +245,26 @@ export default function App() {
       unlistenWake.then((unlisten) => unlisten());
       unlistenTray.then((unlisten) => unlisten());
       unlistenCompact.then((unlisten) => unlisten());
+      unlistenWidget.then((unlisten) => unlisten());
     };
   }, [loadWindows, loadSettings, settings.poll_interval_ms]);
+
+  const handleToggleWidget = async () => {
+    try {
+      const next = !settings.widget_enabled;
+      await invoke("toggle_widget", { enable: next });
+      setSettings((prev) => ({ ...prev, widget_enabled: next }));
+      showToast(next ? "Desktop Widget enabled" : "Desktop Widget hidden", "info");
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleStartDrag = (e: React.MouseEvent) => {
+    if (e.button === 0 && !(e.target as HTMLElement).closest("button, input, select, a, .theme-picker-container, [data-no-drag]")) {
+      invoke("start_window_drag", { windowLabel: "main" });
+    }
+  };
 
   const handleToggleCompact = async (enable: boolean) => {
     try {
@@ -469,14 +496,14 @@ export default function App() {
       {/* Top Header */}
       <header
         className={`app-top-header ${settings.compact_mode ? "is-compact" : ""}`}
-        data-tauri-drag-region
+        onMouseDown={handleStartDrag}
         onDoubleClick={settings.compact_mode ? undefined : handleToggleMaximize}
       >
-        <div className="header-main-row" data-tauri-drag-region>
-          <div className="header-logo-group" data-tauri-drag-region>
-            <img src="/logo.png" className="app-header-logo" alt="StreamShield" data-tauri-drag-region />
+        <div className="header-main-row">
+          <div className="header-logo-group">
+            <img src="/logo.png" className="app-header-logo" alt="StreamShield" />
             {!settings.compact_mode && (
-              <img src="/text-logo.png" className="header-app-wordmark" alt="StreamShield" data-tauri-drag-region />
+              <img src="/text-logo.png" className="header-app-wordmark" alt="StreamShield" />
             )}
           </div>
 
@@ -510,6 +537,17 @@ export default function App() {
                 aria-label="Toggle stealth mode"
               >
                 {isSelfShielded ? <IconEyeOff size={15} /> : <IconEye size={15} />}
+              </button>
+
+              {/* Desktop Widget Shortcut */}
+              <button
+                className={`compact-mode-action-btn ${settings.widget_enabled ? "is-active" : ""}`}
+                onClick={handleToggleWidget}
+                title={settings.widget_enabled ? "Desktop Widget Active (Click to hide)" : "Show Desktop Screen Widget"}
+                type="button"
+                aria-label="Desktop Widget"
+              >
+                <IconWidget size={13} />
               </button>
 
               {/* Expand back to full view */}
@@ -589,6 +627,17 @@ export default function App() {
                 aria-label="Compact Mode"
               >
                 <IconCompact size={15} />
+              </button>
+
+              {/* Desktop Widget Toggle */}
+              <button
+                className={`header-widget-btn ${settings.widget_enabled ? "is-active" : ""}`}
+                onClick={handleToggleWidget}
+                title={settings.widget_enabled ? "Desktop Widget Active (Click to hide)" : "Show Desktop Screen Widget"}
+                type="button"
+                aria-label="Desktop Widget"
+              >
+                <IconWidget size={15} />
               </button>
 
               {/* Settings Gear Button */}

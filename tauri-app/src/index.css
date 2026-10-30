@@ -163,7 +163,11 @@ body,
   box-shadow: var(--card-shadow);
   backdrop-filter: blur(16px);
   user-select: none;
-  -webkit-app-region: drag;
+  cursor: grab;
+}
+
+.app-top-header:active {
+  cursor: grabbing;
 }
 
 .header-action-group,
@@ -174,7 +178,7 @@ input,
 .theme-picker-container,
 .settings-gear-btn,
 .window-controls-group {
-  -webkit-app-region: no-drag;
+  cursor: default;
 }
 
 .header-main-row {
@@ -2489,4 +2493,661 @@ input,
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.05);
   animation: pulse 1.5s infinite;
+}
+
+/* ==========================================================================
+   HEADER DESKTOP WIDGET QUICK TOGGLE
+   ========================================================================== */
+
+.header-widget-btn {
+  background: transparent;
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.header-widget-btn:hover {
+  background: var(--bg-card-hover, rgba(255, 255, 255, 0.08));
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+  transform: scale(1.05);
+}
+
+.header-widget-btn.is-active {
+  background: var(--bg-accent-subtle, rgba(0, 240, 255, 0.15));
+  border-color: var(--border-accent);
+  color: var(--accent-color);
+  box-shadow: 0 0 8px var(--glow-accent);
+}
+
+/* ==========================================================================
+   SETTINGS MODAL: DESKTOP WIDGET CONTROLS & PREVIEWS
+   ========================================================================== */
+
+.widget-style-selector-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin: 12px 0 8px;
+}
+
+.widget-style-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.widget-style-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  position: relative;
+}
+
+.widget-style-card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-hover);
+}
+
+.widget-style-card.is-selected {
+  border-color: var(--accent-color);
+  background: var(--bg-card-active);
+  box-shadow: 0 0 10px var(--glow-accent);
+}
+
+.widget-style-preview {
+  width: 68px;
+  height: 42px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* Pill Preview */
+.preview-pill-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-accent);
+  box-shadow: 0 0 5px var(--glow-accent);
+}
+
+.mini-pill-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-color);
+}
+
+.mini-pill-tag {
+  font-size: 8px;
+  font-weight: 800;
+  color: var(--accent-color);
+}
+
+.mini-pill-icons {
+  display: flex;
+  gap: 2px;
+}
+
+.mini-icon {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* Dock Preview */
+.preview-dock-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px;
+}
+
+.dock-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.dock-dot.active {
+  background: var(--accent-color);
+  box-shadow: 0 0 4px var(--accent-color);
+}
+
+/* Badge Preview */
+.preview-badge-circle {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1.5px solid var(--accent-color);
+  box-shadow: 0 0 6px var(--glow-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mini-badge-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-color);
+}
+
+.widget-style-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.widget-style-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.widget-style-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+/* ==========================================================================
+   DESKTOP SCREEN WIDGET (MULTI-WINDOW TRANSPARENT HUD)
+   ========================================================================== */
+
+html.is-widget-window,
+body.is-widget-window {
+  background: transparent !important;
+  background-color: transparent !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  user-select: none;
+}
+
+body.is-widget-window #root {
+  background: transparent !important;
+  background-color: transparent !important;
+  overflow: hidden !important;
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.desktop-widget-root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  user-select: none;
+}
+
+.desktop-widget-root:active {
+  cursor: grabbing;
+}
+
+/* ── 1. DYNAMIC PILL / ISLAND MODE ── */
+.desktop-widget-root.pill-mode {
+  padding: 3px 6px;
+}
+
+.widget-pill-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 8px;
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid var(--border-accent, rgba(0, 240, 255, 0.45));
+  border-radius: 9999px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.65), 0 0 12px var(--glow-accent, rgba(0, 240, 255, 0.3));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  height: 38px;
+  box-sizing: border-box;
+}
+
+.pill-brand-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 9999px;
+  transition: all 0.15s ease;
+}
+
+.pill-brand-badge:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.widget-pill-logo {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 5px var(--glow-accent));
+}
+
+.pill-counter-tag {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-secondary, #94a3b8);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  transition: all 0.2s ease;
+}
+
+.pill-counter-tag.all-safe {
+  background: rgba(16, 185, 129, 0.25);
+  color: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+}
+
+.pill-counter-tag.partial {
+  background: rgba(245, 158, 11, 0.25);
+  color: #f59e0b;
+}
+
+.pill-active-apps-deck {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pill-mini-app-tile {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.pill-mini-app-tile:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: scale(1.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.pill-mini-app-tile.is-shielded {
+  border-color: var(--accent-color, #00f0ff);
+  background: rgba(0, 240, 255, 0.14);
+  box-shadow: 0 0 6px var(--glow-accent, rgba(0, 240, 255, 0.3));
+}
+
+.pill-app-icon {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+}
+
+.pill-app-initial {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.pill-mini-shield-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--toggle-rail-on, #10b981);
+  box-shadow: 0 0 4px var(--toggle-rail-on, #10b981);
+}
+
+.pill-action-cluster {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  padding-left: 6px;
+}
+
+.pill-master-btn,
+.pill-eye-btn,
+.pill-window-btn,
+.pill-close-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.pill-master-btn:hover,
+.pill-eye-btn:hover,
+.pill-window-btn:hover,
+.pill-close-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  transform: scale(1.08);
+}
+
+.pill-master-btn.is-active {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+}
+
+.pill-master-btn.is-partial {
+  background: rgba(245, 158, 11, 0.25);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #f59e0b;
+}
+
+.pill-eye-btn.is-stealth {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+}
+
+.pill-close-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #ef4444;
+}
+
+/* ── 2. FLOATING COMPACT DOCK MODE ── */
+.desktop-widget-root.dock-mode {
+  padding: 4px;
+}
+
+.widget-dock-container {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid var(--border-accent, rgba(0, 240, 255, 0.45));
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.7), 0 0 14px var(--glow-accent, rgba(0, 240, 255, 0.3));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 8px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.widget-dock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 6px;
+}
+
+.dock-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.widget-dock-logo {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 4px var(--glow-accent));
+}
+
+.dock-count-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.dock-header-right {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.dock-tool-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.dock-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.dock-tool-btn.is-active,
+.dock-tool-btn.is-stealth {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.dock-tool-btn.close:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #ef4444;
+}
+
+.widget-dock-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+
+.dock-app-tile {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.dock-app-tile:hover {
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.dock-app-tile.is-shielded {
+  border-color: var(--accent-color, #00f0ff);
+  background: rgba(0, 240, 255, 0.15);
+  box-shadow: 0 0 8px var(--glow-accent, rgba(0, 240, 255, 0.35));
+}
+
+.dock-app-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.dock-app-initial {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.dock-shield-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--toggle-rail-on, #10b981);
+  color: #042f2e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 5px #10b981;
+}
+
+/* ── 3. CORNER STATUS BADGE MODE ── */
+.desktop-widget-root.badge-mode {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.widget-badge-circle {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1.5px solid var(--border-accent, rgba(0, 240, 255, 0.5));
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.7), 0 0 12px var(--glow-accent, rgba(0, 240, 255, 0.4));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.widget-badge-circle:hover {
+  transform: scale(1.08);
+  border-color: var(--accent-color);
+  box-shadow: 0 4px 22px rgba(0, 0, 0, 0.8), 0 0 18px var(--glow-accent);
+}
+
+.widget-badge-circle.is-all {
+  border-color: #10b981;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.7), 0 0 14px rgba(16, 185, 129, 0.5);
+}
+
+.widget-badge-circle.is-partial {
+  border-color: #f59e0b;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.7), 0 0 14px rgba(245, 158, 11, 0.5);
+}
+
+.widget-badge-logo {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 6px var(--glow-accent));
+}
+
+.badge-count-pill {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  background: var(--accent-color, #00f0ff);
+  color: #03131e;
+  font-size: 9px;
+  font-weight: 800;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #0f172a;
+  box-shadow: 0 0 6px var(--glow-accent);
+}
+
+.badge-quick-popover {
+  position: absolute;
+  bottom: 54px;
+  right: 0;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid var(--border-accent, rgba(0, 240, 255, 0.45));
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8), 0 0 14px var(--glow-accent);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 130px;
+  backdrop-filter: blur(16px);
+  z-index: 999;
+}
+
+.badge-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: 100%;
+  text-align: left;
+}
+
+.badge-popover-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.badge-popover-item.stealth-active {
+  color: #10b981;
+}
+
+.badge-popover-item.close:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
 }

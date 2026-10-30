@@ -13,6 +13,7 @@ import {
   IconAlert,
   IconClose,
   IconCheck,
+  IconWidget,
 } from "./Icons";
 
 export interface AppSettings {
@@ -27,6 +28,10 @@ export interface AppSettings {
   confirm_batch: boolean;
   mpo_fix: boolean;
   self_stealth: boolean;
+  widget_enabled: boolean;
+  widget_style: "pill" | "dock" | "badge";
+  widget_always_on_top: boolean;
+  widget_stealth: boolean;
 }
 
 export interface CaptureEnvironment {
@@ -504,6 +509,133 @@ export default function SettingsModal({
                     <span className="toggle-knob" />
                   </span>
                 </label>
+              </div>
+
+              {/* Desktop Screen Widget Section */}
+              <div className="settings-subsection-divider" />
+              <div className="settings-field-group">
+                <div className="settings-group-heading">
+                  <IconWidget size={14} className="settings-group-icon" />
+                  <span>Desktop Screen Widget</span>
+                </div>
+                <div className="setting-row-item">
+                  <div className="setting-meta">
+                    <span className="setting-label">Enable Floating Screen Widget</span>
+                    <span className="setting-subtext">
+                      Displays a lightweight, always-accessible floating HUD on your desktop to monitor and toggle app capture protection without opening the main window
+                    </span>
+                  </div>
+                  <label className="toggle-control">
+                    <input
+                      type="checkbox"
+                      checked={!!settings.widget_enabled}
+                      onChange={(e) => handleToggle("widget_enabled", e.target.checked)}
+                      disabled={saving}
+                    />
+                    <span className="toggle-rail">
+                      <span className="toggle-knob" />
+                    </span>
+                  </label>
+                </div>
+
+                <div className="widget-style-selector-label">Widget Display Style</div>
+                <div className="widget-style-grid">
+                  <div
+                    className={`widget-style-card ${(!settings.widget_style || settings.widget_style === "pill") ? "is-selected" : ""}`}
+                    onClick={() => handleToggle("widget_style", "pill")}
+                  >
+                    <div className="widget-style-preview pill-preview">
+                      <div className="preview-pill-bar">
+                        <span className="mini-pill-dot" />
+                        <span className="mini-pill-tag">3/5</span>
+                        <div className="mini-pill-icons">
+                          <span className="mini-icon" />
+                          <span className="mini-icon" />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="widget-style-info">
+                      <div className="widget-style-name">Dynamic Pill / Island</div>
+                      <div className="widget-style-desc">Floating horizontal capsule with shield counter, mini app avatars, master shield switch & stealth eye</div>
+                    </div>
+                    {(!settings.widget_style || settings.widget_style === "pill") && <IconCheck size={14} className="theme-active-tick" />}
+                  </div>
+
+                  <div
+                    className={`widget-style-card ${settings.widget_style === "dock" ? "is-selected" : ""}`}
+                    onClick={() => handleToggle("widget_style", "dock")}
+                  >
+                    <div className="widget-style-preview dock-preview">
+                      <div className="preview-dock-grid">
+                        <span className="dock-dot" />
+                        <span className="dock-dot active" />
+                        <span className="dock-dot" />
+                        <span className="dock-dot" />
+                      </div>
+                    </div>
+                    <div className="widget-style-info">
+                      <div className="widget-style-name">Floating Compact Dock</div>
+                      <div className="widget-style-desc">Tactile squircle grid of open apps with 1-tap capture shield toggles and quick action bar</div>
+                    </div>
+                    {settings.widget_style === "dock" && <IconCheck size={14} className="theme-active-tick" />}
+                  </div>
+
+                  <div
+                    className={`widget-style-card ${settings.widget_style === "badge" ? "is-selected" : ""}`}
+                    onClick={() => handleToggle("widget_style", "badge")}
+                  >
+                    <div className="widget-style-preview badge-preview">
+                      <div className="preview-badge-circle">
+                        <span className="mini-badge-dot" />
+                      </div>
+                    </div>
+                    <div className="widget-style-info">
+                      <div className="widget-style-name">Corner Status Badge</div>
+                      <div className="widget-style-desc">Minimalist ambient 52px floating glowing circle showing shield status, with interactive popover controls</div>
+                    </div>
+                    {settings.widget_style === "badge" && <IconCheck size={14} className="theme-active-tick" />}
+                  </div>
+                </div>
+
+                <div className="setting-row-item" style={{ marginTop: "12px" }}>
+                  <div className="setting-meta">
+                    <span className="setting-label">Widget Always on Top</span>
+                    <span className="setting-subtext">
+                      Pins the floating widget above full-screen games, streaming tools, and other application windows
+                    </span>
+                  </div>
+                  <label className="toggle-control">
+                    <input
+                      type="checkbox"
+                      checked={settings.widget_always_on_top ?? true}
+                      onChange={(e) => handleToggle("widget_always_on_top", e.target.checked)}
+                      disabled={saving}
+                    />
+                    <span className="toggle-rail">
+                      <span className="toggle-knob" />
+                    </span>
+                  </label>
+                </div>
+
+                <div className="setting-row-item">
+                  <div className="setting-meta">
+                    <span className="setting-label">Widget Capture Stealth</span>
+                    <span className="setting-subtext">
+                      Masks the widget with WDA_EXCLUDEFROMCAPTURE so it is visible to you on your desktop, but completely invisible in OBS, Discord, and Medal recordings
+                    </span>
+                  </div>
+                  <label className="toggle-control">
+                    <input
+                      type="checkbox"
+                      checked={settings.widget_stealth ?? true}
+                      onChange={(e) => handleToggle("widget_stealth", e.target.checked)}
+                      disabled={saving}
+                    />
+                    <span className="toggle-rail">
+                      <span className="toggle-knob" />
+                    </span>
+                  </label>
+                </div>
               </div>
             </div>
           )}

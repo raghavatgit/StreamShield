@@ -13,6 +13,10 @@ fn default_show_pid() -> bool { true }
 fn default_confirm_batch() -> bool { false }
 fn default_mpo_fix() -> bool { false }
 fn default_self_stealth() -> bool { false }
+fn default_widget_enabled() -> bool { false }
+fn default_widget_style() -> String { "pill".to_string() }
+fn default_widget_always_on_top() -> bool { true }
+fn default_widget_stealth() -> bool { true }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -38,6 +42,14 @@ pub struct AppSettings {
     pub mpo_fix: bool,
     #[serde(default = "default_self_stealth")]
     pub self_stealth: bool,
+    #[serde(default = "default_widget_enabled")]
+    pub widget_enabled: bool,
+    #[serde(default = "default_widget_style")]
+    pub widget_style: String,
+    #[serde(default = "default_widget_always_on_top")]
+    pub widget_always_on_top: bool,
+    #[serde(default = "default_widget_stealth")]
+    pub widget_stealth: bool,
 }
 
 impl Default for AppSettings {
@@ -54,6 +66,10 @@ impl Default for AppSettings {
             confirm_batch: default_confirm_batch(),
             mpo_fix: default_mpo_fix(),
             self_stealth: default_self_stealth(),
+            widget_enabled: default_widget_enabled(),
+            widget_style: default_widget_style(),
+            widget_always_on_top: default_widget_always_on_top(),
+            widget_stealth: default_widget_stealth(),
         }
     }
 }

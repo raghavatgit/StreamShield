@@ -1,7 +1,14 @@
-﻿import React from "react";
+import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import DesktopWidget from "./components/DesktopWidget";
 import "./index.css";
+
+const isWidget = typeof window !== "undefined" && window.location.search.includes("mode=widget");
+if (isWidget) {
+  document.documentElement.classList.add("is-widget-window");
+  document.body.classList.add("is-widget-window");
+}
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: React.ReactNode }) {
@@ -61,7 +68,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      {isWidget ? <DesktopWidget /> : <App />}
     </ErrorBoundary>
   </React.StrictMode>
 );
