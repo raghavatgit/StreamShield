@@ -238,6 +238,14 @@ export default function App() {
       setSettings((prev) => ({ ...prev, widget_enabled: event.payload }));
     });
 
+    const unlistenShield = listen("shield_state_changed", () => {
+      loadWindows();
+    });
+
+    const unlistenSelfShield = listen<boolean>("self_shield_changed", (event) => {
+      setIsSelfShielded(event.payload);
+    });
+
     return () => {
       if (interval) clearInterval(interval);
       window.removeEventListener("focus", onFocus);
@@ -246,6 +254,8 @@ export default function App() {
       unlistenTray.then((unlisten) => unlisten());
       unlistenCompact.then((unlisten) => unlisten());
       unlistenWidget.then((unlisten) => unlisten());
+      unlistenShield.then((unlisten) => unlisten());
+      unlistenSelfShield.then((unlisten) => unlisten());
     };
   }, [loadWindows, loadSettings, settings.poll_interval_ms]);
 

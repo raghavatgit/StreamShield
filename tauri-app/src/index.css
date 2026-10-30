@@ -2743,6 +2743,9 @@ body.is-widget-window #root {
   cursor: pointer;
   padding: 2px 4px;
   border-radius: 9999px;
+  background: transparent;
+  border: none;
+  font-family: inherit;
   transition: all 0.15s ease;
 }
 
@@ -2929,6 +2932,10 @@ body.is-widget-window #root {
   align-items: center;
   gap: 6px;
   cursor: pointer;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  padding: 0;
 }
 
 .widget-dock-logo {

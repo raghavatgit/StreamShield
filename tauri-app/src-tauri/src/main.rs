@@ -398,7 +398,7 @@ fn get_windows(state: State<AppState>) -> Vec<WindowInfo> {
 }
 
 #[tauri::command]
-fn toggle_shield(exe_name: String, hwnd: usize, _pid: u32, enable: bool, state: State<AppState>, app: tauri::AppHandle) -> Result<bool, String> {
+fn toggle_shield(exe_name: String, hwnd: usize, #[allow(unused_variables)] pid: u32, enable: bool, state: State<AppState>, app: tauri::AppHandle) -> Result<bool, String> {
     let shield_mode = state.config.lock().map(|c| c.settings.shield_mode.clone()).unwrap_or_else(|_| "exclude".to_string());
     injector::set_window_affinity(hwnd, enable, Some(&shield_mode))?;
     {
@@ -423,6 +423,7 @@ fn toggle_shield(exe_name: String, hwnd: usize, _pid: u32, enable: bool, state: 
     }
     update_tray_status(&state);
     let _ = rebuild_tray_menu(&app);
+    let _ = app.emit("shield_state_changed", ());
     Ok(true)
 }
 
@@ -443,6 +444,7 @@ fn reapply_shields(state: State<AppState>, app: tauri::AppHandle) -> Vec<String>
         .map(|w| w.exe_name).collect();
     update_tray_status(&state);
     let _ = rebuild_tray_menu(&app);
+    let _ = app.emit("shield_state_changed", ());
     res
 }
 
@@ -551,6 +553,7 @@ fn clear_all_shields(state: State<AppState>, app: tauri::AppHandle) -> Result<bo
 
     update_tray_status(&state);
     let _ = rebuild_tray_menu(&app);
+    let _ = app.emit("shield_state_changed", ());
     Ok(true)
 }
 
@@ -583,41 +586,40 @@ fn toggle_maximize_window(window: WebviewWindow) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn toggle_self_shield(enable: bool, window: WebviewWindow) -> Result<bool, String> {
+fn toggle_self_shield(enable: bool, app: tauri::AppHandle, state: State<AppState>) -> Result<bool, String> {
     #[cfg(windows)]
     {
         use winapi::um::winuser::SetWindowDisplayAffinity;
         const WDA_NONE: u32 = 0x00000000;
         const WDA_EXCLUDEFROMCAPTURE: u32 = 0x00000011;
-
-        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
         let affinity = if enable { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE };
-        let ok = unsafe { SetWindowDisplayAffinity(hwnd.0 as _, affinity) };
-        if ok != 0 {
-            Ok(enable)
-        } else {
-            Err("Failed to set StreamShield display affinity".to_string())
+
+        if let Some(main_win) = app.get_webview_window("main") {
+            if let Ok(hwnd) = main_win.hwnd() {
+                unsafe { SetWindowDisplayAffinity(hwnd.0 as _, affinity); }
+            }
+        }
+        if let Some(widget_win) = app.get_webview_window("widget") {
+            if let Ok(hwnd) = widget_win.hwnd() {
+                unsafe { SetWindowDisplayAffinity(hwnd.0 as _, affinity); }
+            }
         }
     }
-    #[cfg(not(windows))]
-    Ok(false)
+
+    if let Ok(mut cfg) = state.config.lock() {
+        cfg.settings.self_stealth = enable;
+        cfg.settings.widget_stealth = enable;
+        let _ = save_config(&cfg);
+    }
+
+    let _ = app.emit("self_shield_changed", enable);
+    let _ = rebuild_tray_menu(&app);
+    Ok(enable)
 }
 
 #[tauri::command]
-fn is_self_shielded(window: WebviewWindow) -> bool {
-    #[cfg(windows)]
-    {
-        use winapi::um::winuser::GetWindowDisplayAffinity;
-        const WDA_EXCLUDEFROMCAPTURE: u32 = 0x00000011;
-        if let Ok(hwnd) = window.hwnd() {
-            let mut affinity: u32 = 0;
-            let ok = unsafe { GetWindowDisplayAffinity(hwnd.0 as _, &mut affinity) };
-            return ok != 0 && affinity == WDA_EXCLUDEFROMCAPTURE;
-        }
-        false
-    }
-    #[cfg(not(windows))]
-    false
+fn is_self_shielded(state: State<AppState>) -> bool {
+    state.config.lock().map(|c| c.settings.self_stealth).unwrap_or(false)
 }
 
 
@@ -678,6 +680,14 @@ fn start_window_drag(app: tauri::AppHandle, window_label: Option<String>) {
     }
 }
 
+#[tauri::command]
+fn set_widget_size(app: tauri::AppHandle, width: f64, height: f64) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("widget") {
+        let _ = w.set_size(Size::Logical(LogicalSize::new(width, height)));
+    }
+    Ok(())
+}
+
 fn get_widget_dimensions(style: &str) -> (f64, f64) {
     match style {
         "dock" => (270.0, 210.0),
@@ -706,7 +716,7 @@ fn open_or_update_widget(app: &tauri::AppHandle) -> Result<(), Box<dyn std::erro
 
     if !enabled {
         if let Some(w) = app.get_webview_window("widget") {
-            let _ = w.close();
+            let _ = w.hide();
         }
         return Ok(());
     }
@@ -847,6 +857,15 @@ fn create_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::
         let _ = w.show();
         let _ = w.unminimize();
         let _ = w.set_focus();
+        #[cfg(windows)]
+        if let Ok(hwnd) = w.hwnd() {
+            use winapi::um::winuser::{ShowWindow, SetForegroundWindow, BringWindowToTop, SW_RESTORE};
+            unsafe {
+                ShowWindow(hwnd.0 as _, SW_RESTORE);
+                BringWindowToTop(hwnd.0 as _);
+                SetForegroundWindow(hwnd.0 as _);
+            }
+        }
         return Ok(());
     }
 
@@ -876,6 +895,26 @@ fn create_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::
 
     let win = builder.build()?;
     let _ = win.set_focus();
+    #[cfg(windows)]
+    if let Ok(hwnd) = win.hwnd() {
+        use winapi::um::winuser::{ShowWindow, SetForegroundWindow, BringWindowToTop, SW_SHOWNORMAL};
+        unsafe {
+            ShowWindow(hwnd.0 as _, SW_SHOWNORMAL);
+            BringWindowToTop(hwnd.0 as _);
+            SetForegroundWindow(hwnd.0 as _);
+        }
+    }
+
+    let is_stealth = app.try_state::<AppState>()
+        .and_then(|s| s.config.lock().ok().map(|c| c.settings.self_stealth))
+        .unwrap_or(false);
+    if is_stealth {
+        #[cfg(windows)]
+        if let Ok(hwnd) = win.hwnd() {
+            let _ = injector::set_window_affinity(hwnd.0 as _, true, Some("exclude"));
+        }
+    }
+
     Ok(())
 }
 
@@ -909,7 +948,7 @@ fn main() {
             check_admin, hide_to_tray, minimize_window, toggle_maximize_window,
             toggle_self_shield, is_self_shielded, get_capture_environment,
             open_external_url, install_update_silent, set_compact_mode,
-            start_window_drag, toggle_widget, show_main_window
+            start_window_drag, toggle_widget, show_main_window, set_widget_size
         ])
         .setup(move |app| {
             let args: Vec<String> = std::env::args().collect();
