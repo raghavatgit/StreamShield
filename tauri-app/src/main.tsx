@@ -2,12 +2,38 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import DesktopWidget from "./components/DesktopWidget";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "./index.css";
 
-const isWidget = typeof window !== "undefined" && window.location.search.includes("mode=widget");
+function checkIsWidget(): boolean {
+  try {
+    const curWin = getCurrentWebviewWindow();
+    if (curWin && curWin.label === "widget") {
+      return true;
+    }
+  } catch {
+    // fallback
+  }
+
+  if (typeof window !== "undefined") {
+    const internalLabel =
+      (window as any).__TAURI_INTERNALS__?.metadata?.currentWebview?.label ||
+      (window as any).__TAURI_INTERNALS__?.metadata?.currentWindow?.label;
+    if (internalLabel === "widget") return true;
+
+    if (window.location.hash.includes("widget") || window.location.search.includes("widget")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const isWidget = checkIsWidget();
 if (isWidget) {
   document.documentElement.classList.add("is-widget-window");
   document.body.classList.add("is-widget-window");
+  document.documentElement.style.background = "transparent";
+  document.body.style.background = "transparent";
 }
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {

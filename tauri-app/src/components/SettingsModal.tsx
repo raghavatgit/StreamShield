@@ -144,6 +144,16 @@ export default function SettingsModal({
     }
   };
 
+  const handleSelectWidgetStyle = async (style: "pill" | "dock" | "badge") => {
+    setSaving(true);
+    try {
+      const updated: AppSettings = { ...settings, widget_style: style, widget_enabled: true };
+      await onUpdateSettings(updated);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="settings-modal-backdrop" onClick={onClose}>
       <div className="settings-modal-card" onClick={(e) => e.stopPropagation()}>
@@ -542,7 +552,7 @@ export default function SettingsModal({
                 <div className="widget-style-grid">
                   <div
                     className={`widget-style-card ${(!settings.widget_style || settings.widget_style === "pill") ? "is-selected" : ""}`}
-                    onClick={() => handleToggle("widget_style", "pill")}
+                    onClick={() => handleSelectWidgetStyle("pill")}
                   >
                     <div className="widget-style-preview pill-preview">
                       <div className="preview-pill-bar">
@@ -563,7 +573,7 @@ export default function SettingsModal({
 
                   <div
                     className={`widget-style-card ${settings.widget_style === "dock" ? "is-selected" : ""}`}
-                    onClick={() => handleToggle("widget_style", "dock")}
+                    onClick={() => handleSelectWidgetStyle("dock")}
                   >
                     <div className="widget-style-preview dock-preview">
                       <div className="preview-dock-grid">
@@ -582,7 +592,7 @@ export default function SettingsModal({
 
                   <div
                     className={`widget-style-card ${settings.widget_style === "badge" ? "is-selected" : ""}`}
-                    onClick={() => handleToggle("widget_style", "badge")}
+                    onClick={() => handleSelectWidgetStyle("badge")}
                   >
                     <div className="widget-style-preview badge-preview">
                       <div className="preview-badge-circle">

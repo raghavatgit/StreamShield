@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
 import { WindowInfo } from "./AppRow";
 import { AppSettings } from "./SettingsModal";
@@ -69,6 +70,20 @@ export default function DesktopWidget() {
       unlistenTray.then((u) => u());
     };
   }, [refreshState]);
+
+  // Expand window size when badge popover is opened
+  useEffect(() => {
+    if (widgetStyle === "badge") {
+      try {
+        const win = getCurrentWindow();
+        if (badgeExpanded) {
+          win.setSize(new LogicalSize(180, 240)).catch(() => {});
+        } else {
+          win.setSize(new LogicalSize(64, 64)).catch(() => {});
+        }
+      } catch {}
+    }
+  }, [badgeExpanded, widgetStyle]);
 
   // Window drag via native Win32 message
   const handleDrag = (e: React.MouseEvent) => {

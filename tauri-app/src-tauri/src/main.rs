@@ -503,7 +503,9 @@ fn update_settings(settings: AppSettings, state: State<AppState>, app: tauri::Ap
 
     update_tray_status(&state);
     let _ = rebuild_tray_menu(&app);
-    let _ = open_or_update_widget(&app);
+    if let Err(e) = open_or_update_widget(&app) {
+        eprintln!("[StreamShield] update_settings widget error: {:?}", e);
+    }
     Ok(settings)
 }
 
@@ -678,9 +680,9 @@ fn start_window_drag(app: tauri::AppHandle, window_label: Option<String>) {
 
 fn get_widget_dimensions(style: &str) -> (f64, f64) {
     match style {
-        "dock" => (240.0, 180.0),
-        "badge" => (52.0, 52.0),
-        _ => (280.0, 48.0), // "pill"
+        "dock" => (270.0, 210.0),
+        "badge" => (64.0, 64.0),
+        _ => (340.0, 56.0), // "pill"
     }
 }
 
@@ -715,14 +717,18 @@ fn open_or_update_widget(app: &tauri::AppHandle) -> Result<(), Box<dyn std::erro
         let _ = win.set_size(Size::Logical(LogicalSize::new(w, h)));
         let _ = win.set_always_on_top(always_on_top);
         let _ = win.show();
-        let _ = win.emit("widget_style_changed", style);
+        let _ = win.emit("widget_style_changed", &style);
+        #[cfg(windows)]
+        if let Ok(hwnd) = win.hwnd() {
+            let _ = injector::set_window_affinity(hwnd.0 as _, stealth, Some("exclude"));
+        }
         return Ok(());
     }
 
     let mut builder = WebviewWindowBuilder::new(
         app,
         "widget",
-        WebviewUrl::App("index.html?mode=widget".into()),
+        WebviewUrl::default(),
     )
     .title("StreamShield Widget")
     .inner_size(w, h)
@@ -732,14 +738,25 @@ fn open_or_update_widget(app: &tauri::AppHandle) -> Result<(), Box<dyn std::erro
     .skip_taskbar(true)
     .resizable(false)
     .visible(true)
-    .shadow(false)
-    .additional_browser_args("--disable-background-timer-throttling --disable-renderer-backgrounding");
+    .shadow(false);
+
+    if let Ok(Some(monitor)) = app.primary_monitor() {
+        let screen_size = monitor.size();
+        let scale_factor = monitor.scale_factor();
+        let logical_w = screen_size.width as f64 / scale_factor;
+        let pos_x = (logical_w - w) / 2.0;
+        let pos_y = 36.0;
+        builder = builder.position(pos_x, pos_y);
+    }
 
     if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone())?;
     }
 
-    let win = builder.build()?;
+    let win = builder.build().map_err(|e| {
+        eprintln!("[StreamShield] Failed to build widget window: {:?}", e);
+        e
+    })?;
 
     if stealth {
         #[cfg(windows)]
@@ -778,8 +795,10 @@ fn toggle_widget(app: tauri::AppHandle, enable: Option<bool>, style: Option<Stri
         false
     };
 
-    let _ = open_or_update_widget(&app);
     let _ = rebuild_tray_menu(&app);
+    if let Err(e) = open_or_update_widget(&app) {
+        eprintln!("[StreamShield] toggle_widget error: {:?}", e);
+    }
     let _ = app.emit("widget_state_changed", new_enabled);
     Ok(new_enabled)
 }
