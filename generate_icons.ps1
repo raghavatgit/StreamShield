@@ -1,24 +1,34 @@
 Add-Type -AssemblyName System.Drawing
 
-$srcPath = "C:\Users\GOYAL\.gemini\antigravity-ide\brain\31c474b2-1d56-4484-8e72-bd74eb3ba456\.user_uploaded\media_1787235438639.png"
-$iconsDir = "C:\Users\GOYAL\Documents\work\StreamShield\tauri-app\src-tauri\icons"
-$publicDir = "C:\Users\GOYAL\Documents\work\StreamShield\tauri-app\public"
+$iconsDir = "D:\Users\GOYAL\Documents\work\StreamShield\tauri-app\src-tauri\icons"
+$publicDir = "D:\Users\GOYAL\Documents\work\StreamShield\tauri-app\public"
+$srcPath = Join-Path $iconsDir "icon.png"
 
 if (!(Test-Path $iconsDir)) { New-Item -ItemType Directory -Path $iconsDir -Force }
 if (!(Test-Path $publicDir)) { New-Item -ItemType Directory -Path $publicDir -Force }
 
-$srcImg = [System.Drawing.Image]::FromFile($srcPath)
+# Load image into byte memory first to avoid file lock
+$bytes = [System.IO.File]::ReadAllBytes($srcPath)
+$msSrc = New-Object System.IO.MemoryStream($bytes, $false)
+$srcImg = [System.Drawing.Image]::FromStream($msSrc)
 
-function Get-ResizedBitmap($img, $size) {
+function Get-RoundedBitmap($img, $size) {
     $bmp = New-Object System.Drawing.Bitmap($size, $size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
     $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
     $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
     $g.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
     $g.Clear([System.Drawing.Color]::Transparent)
+
+    $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $pad = [Math]::Max(1.0, $size * 0.012)
+    $path.AddEllipse($pad, $pad, $size - (2 * $pad), $size - (2 * $pad))
+    $g.SetClip($path)
     $g.DrawImage($img, 0, 0, $size, $size)
+    $g.ResetClip()
     $g.Dispose()
+    $path.Dispose()
     return $bmp
 }
 
@@ -38,7 +48,7 @@ $sizes = @(
 )
 
 foreach ($s in $sizes) {
-    $resized = Get-ResizedBitmap $srcImg $s.Size
+    $resized = Get-RoundedBitmap $srcImg $s.Size
     $dest = Join-Path $iconsDir $s.Name
     $resized.Save($dest, [System.Drawing.Imaging.ImageFormat]::Png)
     $resized.Dispose()
@@ -46,7 +56,7 @@ foreach ($s in $sizes) {
 }
 
 # Also save to public/logo.png for frontend UI
-$logoResized = Get-ResizedBitmap $srcImg 256
+$logoResized = Get-RoundedBitmap $srcImg 256
 $logoDest = Join-Path $publicDir "logo.png"
 $logoResized.Save($logoDest, [System.Drawing.Imaging.ImageFormat]::Png)
 $logoResized.Dispose()
@@ -57,7 +67,7 @@ $icoSizes = @(16, 24, 32, 48, 64, 128, 256)
 $pngStreams = @()
 
 foreach ($sz in $icoSizes) {
-    $bmp = Get-ResizedBitmap $srcImg $sz
+    $bmp = Get-RoundedBitmap $srcImg $sz
     $ms = New-Object System.IO.MemoryStream
     $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
     $bmp.Dispose()
@@ -66,6 +76,7 @@ foreach ($sz in $icoSizes) {
 }
 
 $srcImg.Dispose()
+$msSrc.Dispose()
 
 $icoFile = Join-Path $iconsDir "icon.ico"
 $fs = [System.IO.File]::Create($icoFile)

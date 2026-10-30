@@ -153,15 +153,30 @@ export default function App() {
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibilityChange);
 
-    const unlistenPromise = listen("app_wake", () => {
+    const unlistenWake = listen("app_wake", () => {
       loadWindows();
+    });
+
+    const unlistenTray = listen("tray_action_completed", (event) => {
+      loadWindows(true);
+      loadSettings();
+      if (event.payload === "shield_all") {
+        showToast("All applications shielded from tray", "success");
+      } else if (event.payload === "unshield_all") {
+        showToast("All applications unshielded from tray", "info");
+      } else if (event.payload === "mode_changed") {
+        showToast("Shield mode updated from tray", "info");
+      } else if (event.payload === "app_toggled") {
+        showToast("Application privacy toggled from tray", "info");
+      }
     });
 
     return () => {
       if (interval) clearInterval(interval);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      unlistenPromise.then((unlisten) => unlisten());
+      unlistenWake.then((unlisten) => unlisten());
+      unlistenTray.then((unlisten) => unlisten());
     };
   }, [loadWindows, loadSettings, settings.poll_interval_ms]);
 

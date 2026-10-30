@@ -193,7 +193,7 @@ input,
 .app-header-logo {
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
   box-shadow: 0 0 10px var(--glow-accent);

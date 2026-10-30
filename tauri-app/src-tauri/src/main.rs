@@ -8,7 +8,7 @@ mod nvidia_bypass;
 
 use std::sync::Mutex;
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
+    menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     webview::WebviewWindowBuilder,
     Emitter, Manager, State, WebviewUrl, WebviewWindow,
@@ -249,6 +249,95 @@ fn tray_status_text(count: usize) -> String {
     }
 }
 
+fn create_tray_menu(app: &tauri::AppHandle) -> Result<Menu<tauri::Wry>, Box<dyn std::error::Error>> {
+    let state = match app.try_state::<AppState>() {
+        Some(s) => s,
+        None => return Err("AppState not found".into()),
+    };
+    let (shielded, mode, auto_reapply) = state.config.lock().map(|c| {
+        (c.shielded_exes.clone(), c.settings.shield_mode.clone(), c.settings.auto_reapply)
+    }).unwrap_or_default();
+
+    let wins = window_manager::enumerate_windows(&shielded, &mode, auto_reapply);
+    let active_count = wins.iter().filter(|w| w.is_shielded).count();
+
+    let show = MenuItem::with_id(app, "show", "🛡️  Open StreamShield", true, None::<&str>)?;
+    let sep1 = PredefinedMenuItem::separator(app)?;
+    let status_text = tray_status_text(active_count);
+    let status = MenuItem::with_id(app, "status", status_text, false, None::<&str>)?;
+    let sep2 = PredefinedMenuItem::separator(app)?;
+
+    if let Ok(mut guard) = state.tray_status.lock() {
+        *guard = Some(status.clone());
+    }
+
+    // ── Apps Toggle Submenu: unique running applications ──
+    let mut app_items: Vec<MenuItem<tauri::Wry>> = Vec::new();
+    let mut seen_exes = std::collections::HashSet::new();
+    for w in &wins {
+        let exe_lower = w.exe_name.to_lowercase();
+        if !seen_exes.insert(exe_lower.clone()) {
+            continue;
+        }
+        let is_sh = shielded.contains(&exe_lower);
+        let prefix = if is_sh { "✓  " } else { "○  " };
+        let label = format!("{}{}", prefix, w.exe_name);
+        let item_id = format!("toggle_app:{}", w.exe_name);
+        if let Ok(item) = MenuItem::with_id(app, item_id, label, true, None::<&str>) {
+            app_items.push(item);
+        }
+        if app_items.len() >= 15 {
+            break;
+        }
+    }
+
+    let item_refs: Vec<&dyn IsMenuItem<tauri::Wry>> = app_items.iter().map(|i| i as &dyn IsMenuItem<tauri::Wry>).collect();
+    let empty_item = MenuItem::with_id(app, "noop", "(No detectable windows)", false, None::<&str>)?;
+    let apps_submenu = if app_items.is_empty() {
+        Submenu::with_items(app, "📱  Toggle Apps", true, &[&empty_item])?
+    } else {
+        Submenu::with_items(app, "📱  Toggle Apps", true, &item_refs)?
+    };
+
+    // ── Quick Actions Submenu ──
+    let shield_all = MenuItem::with_id(app, "tray_shield_all", "🛡️  Shield All Open Apps", true, None::<&str>)?;
+    let unshield_all = MenuItem::with_id(app, "tray_unshield_all", "🔓  Unshield All", true, None::<&str>)?;
+    let reapply = MenuItem::with_id(app, "tray_reapply", "🔄  Reapply Protection", true, None::<&str>)?;
+    let quick_actions = Submenu::with_items(app, "⚡  Quick Actions", true, &[&shield_all, &unshield_all, &reapply])?;
+
+    // ── Capture Mode Submenu ──
+    let mode_exclude_label = if mode == "exclude" { "✓  Transparent (OBS / Discord)" } else { "○  Transparent (OBS / Discord)" };
+    let mode_monitor_label = if mode == "monitor" { "✓  Black Screen Mask (ShadowPlay / Medal)" } else { "○  Black Screen Mask (ShadowPlay / Medal)" };
+    let m_exclude = MenuItem::with_id(app, "tray_mode_exclude", mode_exclude_label, true, None::<&str>)?;
+    let m_monitor = MenuItem::with_id(app, "tray_mode_monitor", mode_monitor_label, true, None::<&str>)?;
+    let mode_submenu = Submenu::with_items(app, "🎯  Shield Mode", true, &[&m_exclude, &m_monitor])?;
+
+    let sep3 = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit StreamShield", true, None::<&str>)?;
+
+    let menu = Menu::with_items(app, &[
+        &show,
+        &sep1,
+        &status,
+        &sep2,
+        &apps_submenu,
+        &quick_actions,
+        &mode_submenu,
+        &sep3,
+        &quit,
+    ])?;
+
+    Ok(menu)
+}
+
+fn rebuild_tray_menu(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(tray) = app.tray_by_id("main") {
+        let menu = create_tray_menu(app)?;
+        tray.set_menu(Some(menu))?;
+    }
+    Ok(())
+}
+
 fn update_tray_status(state: &AppState) {
     let (shielded, mode, auto_reapply) = state.config.lock().map(|c| {
         (c.shielded_exes.clone(), c.settings.shield_mode.clone(), c.settings.auto_reapply)
@@ -282,7 +371,7 @@ fn get_windows(state: State<AppState>) -> Vec<WindowInfo> {
 }
 
 #[tauri::command]
-fn toggle_shield(exe_name: String, hwnd: usize, _pid: u32, enable: bool, state: State<AppState>) -> Result<bool, String> {
+fn toggle_shield(exe_name: String, hwnd: usize, _pid: u32, enable: bool, state: State<AppState>, app: tauri::AppHandle) -> Result<bool, String> {
     let shield_mode = state.config.lock().map(|c| c.settings.shield_mode.clone()).unwrap_or_else(|_| "exclude".to_string());
     injector::set_window_affinity(hwnd, enable, Some(&shield_mode))?;
     {
@@ -306,6 +395,7 @@ fn toggle_shield(exe_name: String, hwnd: usize, _pid: u32, enable: bool, state: 
         save_config(&config);
     }
     update_tray_status(&state);
+    let _ = rebuild_tray_menu(&app);
     Ok(true)
 }
 
@@ -315,7 +405,7 @@ fn get_shielded_exes(state: State<AppState>) -> Vec<String> {
 }
 
 #[tauri::command]
-fn reapply_shields(state: State<AppState>) -> Vec<String> {
+fn reapply_shields(state: State<AppState>, app: tauri::AppHandle) -> Vec<String> {
     let (exes, mode, auto_reapply) = state.config.lock().map(|c| {
         (c.shielded_exes.clone(), c.settings.shield_mode.clone(), c.settings.auto_reapply)
     }).unwrap_or_default();
@@ -325,6 +415,7 @@ fn reapply_shields(state: State<AppState>) -> Vec<String> {
         .filter(|w| injector::set_window_affinity(w.hwnd, true, Some(&mode)).is_ok())
         .map(|w| w.exe_name).collect();
     update_tray_status(&state);
+    let _ = rebuild_tray_menu(&app);
     res
 }
 
@@ -363,7 +454,7 @@ fn get_settings(state: State<AppState>) -> AppSettings {
 }
 
 #[tauri::command]
-fn update_settings(settings: AppSettings, state: State<AppState>) -> Result<AppSettings, String> {
+fn update_settings(settings: AppSettings, state: State<AppState>, app: tauri::AppHandle) -> Result<AppSettings, String> {
     #[cfg(windows)]
     {
         let current_autostart = get_autostart_registry();
@@ -384,11 +475,12 @@ fn update_settings(settings: AppSettings, state: State<AppState>) -> Result<AppS
     }
 
     update_tray_status(&state);
+    let _ = rebuild_tray_menu(&app);
     Ok(settings)
 }
 
 #[tauri::command]
-fn reset_settings(state: State<AppState>) -> Result<AppSettings, String> {
+fn reset_settings(state: State<AppState>, app: tauri::AppHandle) -> Result<AppSettings, String> {
     let default_settings = AppSettings::default();
     #[cfg(windows)]
     {
@@ -403,11 +495,12 @@ fn reset_settings(state: State<AppState>) -> Result<AppSettings, String> {
     }
 
     update_tray_status(&state);
+    let _ = rebuild_tray_menu(&app);
     Ok(default_settings)
 }
 
 #[tauri::command]
-fn clear_all_shields(state: State<AppState>) -> Result<bool, String> {
+fn clear_all_shields(state: State<AppState>, app: tauri::AppHandle) -> Result<bool, String> {
     let (exes, mode, _) = state.config.lock().map(|c| {
         (c.shielded_exes.clone(), c.settings.shield_mode.clone(), false)
     }).unwrap_or_default();
@@ -426,6 +519,7 @@ fn clear_all_shields(state: State<AppState>) -> Result<bool, String> {
     }
 
     update_tray_status(&state);
+    let _ = rebuild_tray_menu(&app);
     Ok(true)
 }
 
@@ -572,21 +666,8 @@ fn main() {
             }
             // Autostart: NO window created = NO white flash. Just tray icon.
 
-            // ── Tray menu ────────────────────────────────────────────────
-            let show   = MenuItem::with_id(app, "show",   "🛡️  Open StreamShield", true, None::<&str>)?;
-            let sep1   = PredefinedMenuItem::separator(app)?;
-            let status = MenuItem::with_id(app, "status", "No apps shielded",      false, None::<&str>)?;
-            let sep2   = PredefinedMenuItem::separator(app)?;
-            let quit   = MenuItem::with_id(app, "quit",   "Quit",                  true, None::<&str>)?;
-            let menu   = Menu::with_items(app, &[&show, &sep1, &status, &sep2, &quit])?;
-
-            // Store status item handle so toggle_shield can update it
-            if let Some(state) = app.try_state::<AppState>() {
-                if let Ok(mut guard) = state.tray_status.lock() {
-                    *guard = Some(status);
-                }
-                update_tray_status(&state);
-            }
+            // ── Dynamic Tray menu with toggleable options ────────────────
+            let menu = create_tray_menu(app.handle())?;
 
             // ── Tray icon ────────────────────────────────────────────────
             let icon = app.default_window_icon()
@@ -621,23 +702,161 @@ fn main() {
                         }
                     }
                 })
-                // Right-click menu actions
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.unminimize();
-                            let _ = w.set_focus();
-                            let _ = w.emit("app_wake", ());
-                        } else {
-                            let _ = create_main_window(app);
+                // Right-click menu actions & app toggles
+                .on_menu_event(|app, event| {
+                    let id = event.id.as_ref();
+                    match id {
+                        "show" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.show();
+                                let _ = w.unminimize();
+                                let _ = w.set_focus();
+                                let _ = w.emit("app_wake", ());
+                            } else {
+                                let _ = create_main_window(app);
+                            }
                         }
+                        "tray_shield_all" => {
+                            if let Some(state) = app.try_state::<AppState>() {
+                                let (mode, auto_reapply) = state.config.lock().map(|c| {
+                                    (c.settings.shield_mode.clone(), c.settings.auto_reapply)
+                                }).unwrap_or_default();
+                                {
+                                    let mut cfg = match state.config.lock() {
+                                        Ok(c) => c,
+                                        Err(_) => return,
+                                    };
+                                    let wins = window_manager::enumerate_windows(&cfg.shielded_exes, &mode, auto_reapply);
+                                    for w in wins {
+                                        let _ = injector::set_window_affinity(w.hwnd, true, Some(&mode));
+                                        cfg.shielded_exes.insert(w.exe_name.to_lowercase());
+                                    }
+                                    save_config(&cfg);
+                                }
+                                let _ = rebuild_tray_menu(app);
+                                if let Some(w) = app.get_webview_window("main") {
+                                    let _ = w.emit("tray_action_completed", "shield_all");
+                                }
+                            }
+                        }
+                        "tray_unshield_all" => {
+                            if let Some(state) = app.try_state::<AppState>() {
+                                let auto_reapply = state.config.lock().map(|c| c.settings.auto_reapply).unwrap_or(true);
+                                {
+                                    let mut cfg = match state.config.lock() {
+                                        Ok(c) => c,
+                                        Err(_) => return,
+                                    };
+                                    let wins = window_manager::enumerate_windows(&cfg.shielded_exes, "exclude", auto_reapply);
+                                    for w in wins {
+                                        let _ = injector::set_window_affinity(w.hwnd, false, None);
+                                    }
+                                    cfg.shielded_exes.clear();
+                                    save_config(&cfg);
+                                }
+                                let _ = rebuild_tray_menu(app);
+                                if let Some(w) = app.get_webview_window("main") {
+                                    let _ = w.emit("tray_action_completed", "unshield_all");
+                                }
+                            }
+                        }
+                        "tray_reapply" => {
+                            if let Some(state) = app.try_state::<AppState>() {
+                                let (exes, mode, auto_reapply) = state.config.lock().map(|c| {
+                                    (c.shielded_exes.clone(), c.settings.shield_mode.clone(), c.settings.auto_reapply)
+                                }).unwrap_or_default();
+                                let wins = window_manager::enumerate_windows(&exes, &mode, auto_reapply);
+                                for w in wins {
+                                    if exes.contains(&w.exe_name.to_lowercase()) {
+                                        let _ = injector::set_window_affinity(w.hwnd, true, Some(&mode));
+                                    }
+                                }
+                                let _ = rebuild_tray_menu(app);
+                            }
+                        }
+                        "tray_mode_exclude" => {
+                            if let Some(state) = app.try_state::<AppState>() {
+                                {
+                                    let mut cfg = match state.config.lock() {
+                                        Ok(c) => c,
+                                        Err(_) => return,
+                                    };
+                                    cfg.settings.shield_mode = "exclude".to_string();
+                                    let wins = window_manager::enumerate_windows(&cfg.shielded_exes, "exclude", cfg.settings.auto_reapply);
+                                    for w in wins {
+                                        if cfg.shielded_exes.contains(&w.exe_name.to_lowercase()) {
+                                            let _ = injector::set_window_affinity(w.hwnd, true, Some("exclude"));
+                                        }
+                                    }
+                                    save_config(&cfg);
+                                }
+                                let _ = rebuild_tray_menu(app);
+                                if let Some(w) = app.get_webview_window("main") {
+                                    let _ = w.emit("tray_action_completed", "mode_changed");
+                                }
+                            }
+                        }
+                        "tray_mode_monitor" => {
+                            if let Some(state) = app.try_state::<AppState>() {
+                                {
+                                    let mut cfg = match state.config.lock() {
+                                        Ok(c) => c,
+                                        Err(_) => return,
+                                    };
+                                    cfg.settings.shield_mode = "monitor".to_string();
+                                    let wins = window_manager::enumerate_windows(&cfg.shielded_exes, "monitor", cfg.settings.auto_reapply);
+                                    for w in wins {
+                                        if cfg.shielded_exes.contains(&w.exe_name.to_lowercase()) {
+                                            let _ = injector::set_window_affinity(w.hwnd, true, Some("monitor"));
+                                        }
+                                    }
+                                    save_config(&cfg);
+                                }
+                                let _ = rebuild_tray_menu(app);
+                                if let Some(w) = app.get_webview_window("main") {
+                                    let _ = w.emit("tray_action_completed", "mode_changed");
+                                }
+                            }
+                        }
+                        "quit" => {
+                            let _ = app.remove_tray_by_id("main");
+                            app.exit(0);
+                        }
+                        other if other.starts_with("toggle_app:") => {
+                            let target_exe = other.trim_start_matches("toggle_app:");
+                            if let Some(state) = app.try_state::<AppState>() {
+                                let (mode, auto_reapply) = state.config.lock().map(|c| {
+                                    (c.settings.shield_mode.clone(), c.settings.auto_reapply)
+                                }).unwrap_or_default();
+                                {
+                                    let mut cfg = match state.config.lock() {
+                                        Ok(c) => c,
+                                        Err(_) => return,
+                                    };
+                                    let norm = target_exe.to_lowercase();
+                                    let currently_shielded = cfg.shielded_exes.contains(&norm);
+                                    let new_state = !currently_shielded;
+                                    let wins = window_manager::enumerate_windows(&cfg.shielded_exes, &mode, auto_reapply);
+                                    for w in wins {
+                                        if w.exe_name.eq_ignore_ascii_case(target_exe) {
+                                            let _ = injector::set_window_affinity(w.hwnd, new_state, Some(&mode));
+                                        }
+                                    }
+                                    if new_state {
+                                        cfg.shielded_exes.insert(norm);
+                                    } else {
+                                        cfg.shielded_exes.remove(&norm);
+                                    }
+                                    save_config(&cfg);
+                                }
+                                let _ = rebuild_tray_menu(app);
+                                if let Some(w) = app.get_webview_window("main") {
+                                    let _ = w.emit("tray_action_completed", "app_toggled");
+                                }
+                            }
+                        }
+                        _ => {}
                     }
-                    "quit" => {
-                        let _ = app.remove_tray_by_id("main");
-                        app.exit(0);
-                    }
-                    _ => {}
                 })
                 .build(app)?;
 
