@@ -18,6 +18,10 @@ import {
   IconMinimize,
   IconMaximize,
   IconRestore,
+  IconEye,
+  IconEyeOff,
+  IconCompact,
+  IconExpand,
 } from "./components/Icons";
 import { ThemeType, THEMES, applyDynamicTheme } from "./utils/themeEngine";
 
@@ -211,6 +215,17 @@ export default function App() {
         showToast("Shield mode updated from tray", "info");
       } else if (event.payload === "app_toggled") {
         showToast("Application privacy toggled from tray", "info");
+      } else if (event.payload === "compact_toggled") {
+        showToast("Compact Mode toggled from tray", "info");
+      }
+    });
+
+    const unlistenCompact = listen<boolean>("compact_mode_changed", (event) => {
+      setSettings((prev) => ({ ...prev, compact_mode: event.payload }));
+      if (event.payload) {
+        showToast("Compact Mode active", "info");
+      } else {
+        showToast("Full View restored", "info");
       }
     });
 
@@ -220,8 +235,19 @@ export default function App() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       unlistenWake.then((unlisten) => unlisten());
       unlistenTray.then((unlisten) => unlisten());
+      unlistenCompact.then((unlisten) => unlisten());
     };
   }, [loadWindows, loadSettings, settings.poll_interval_ms]);
+
+  const handleToggleCompact = async (enable: boolean) => {
+    try {
+      await invoke("set_compact_mode", { compact: enable });
+      setSettings((prev) => ({ ...prev, compact_mode: enable }));
+      showToast(enable ? "Compact Mode enabled" : "Full View restored", "info");
+    } catch (e) {
+      showToast(String(e), "error");
+    }
+  };
 
   const handleUpdateSettings = async (newSettings: AppSettings) => {
     try {
@@ -424,104 +450,190 @@ export default function App() {
 
   const shieldedCount = windows.filter((w) => shieldedExes.has(w.exe_name)).length;
   const percentage = windows.length > 0 ? Math.round((shieldedCount / windows.length) * 100) : 0;
+  const allShielded = windows.length > 0 && shieldedCount === windows.length;
+  const anyShielded = shieldedCount > 0;
+
+  const handleMasterToggle = async () => {
+    if (allShielded) {
+      await handleUnshieldAll();
+    } else {
+      await handleShieldAll();
+    }
+  };
 
   return (
     <div
-      className={`streamshield-root ${isMaximized ? "is-maximized" : ""}`}
+      className={`streamshield-root ${isMaximized ? "is-maximized" : ""} ${settings.compact_mode ? "is-compact" : ""}`}
       onClick={() => themeMenuOpen && setThemeMenuOpen(false)}
     >
       {/* Top Header */}
       <header
-        className="app-top-header"
+        className={`app-top-header ${settings.compact_mode ? "is-compact" : ""}`}
         data-tauri-drag-region
-        onDoubleClick={handleToggleMaximize}
+        onDoubleClick={settings.compact_mode ? undefined : handleToggleMaximize}
       >
         <div className="header-main-row" data-tauri-drag-region>
           <div className="header-logo-group" data-tauri-drag-region>
             <img src="/logo.png" className="app-header-logo" alt="StreamShield" data-tauri-drag-region />
-            <img src="/text-logo.png" className="header-app-wordmark" alt="StreamShield" data-tauri-drag-region />
+            {!settings.compact_mode && (
+              <img src="/text-logo.png" className="header-app-wordmark" alt="StreamShield" data-tauri-drag-region />
+            )}
           </div>
 
-          <div className="header-action-group">
-            {/* Theme Selector Popover */}
-            <div className="theme-picker-container" onClick={(e) => e.stopPropagation()}>
+          {settings.compact_mode ? (
+            <div className="compact-header-actions" onClick={(e) => e.stopPropagation()}>
+              {/* Single Master Switch that shields all or clears all itself */}
               <button
-                className="theme-picker-trigger"
-                onClick={() => setThemeMenuOpen(!themeMenuOpen)}
-                title="Select Theme Preset"
+                className={`compact-master-toggle ${allShielded ? "is-all" : anyShielded ? "is-partial" : ""}`}
+                onClick={handleMasterToggle}
+                title={allShielded ? "Clear all shields (Unshield all)" : "Shield all open applications"}
+                type="button"
+                aria-label="Toggle all shields"
               >
-                <span className="picker-dot" />
-                <span className="picker-text">{THEMES.find((t) => t.id === theme)?.name}</span>
-                <span className="picker-caret">▾</span>
+                <span className="compact-master-rail">
+                  <span className="compact-master-knob">
+                    <IconShield size={10} className="compact-master-glyph" />
+                  </span>
+                </span>
               </button>
 
-              {themeMenuOpen && (
-                <div className="theme-popover-menu">
-                  <div className="theme-popover-title">Themes</div>
-                  {THEMES.map((t) => (
-                    <button
-                      key={t.id}
-                      className={`theme-menu-choice ${theme === t.id ? "is-selected" : ""}`}
-                      onClick={() => {
-                        setTheme(t.id);
-                        handleUpdateSettings({ ...settings, theme: t.id });
-                        setThemeMenuOpen(false);
-                      }}
-                    >
-                      <div className="theme-color-dots">
-                        <span style={{ background: t.colors[0] }} />
-                        <span style={{ background: t.colors[1] }} />
-                      </div>
-                      <span className="theme-choice-name">{t.name}</span>
-                      {theme === t.id && <span className="theme-selected-mark">✓</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Settings Gear Button */}
-            <button
-              className="settings-gear-btn"
-              onClick={() => setSettingsOpen(true)}
-              title="Open StreamShield Preferences"
-            >
-              <IconGear size={16} />
-            </button>
-
-            {/* Window Controls Divider & Suite */}
-            <div className="window-controls-divider" />
-
-            <div className="window-controls-group" onClick={(e) => e.stopPropagation()}>
+              {/* Stealth Display Eye (Slashed when hidden, normal when visible) */}
               <button
-                className="window-control-btn btn-minimize"
+                className={`compact-eye-btn ${isSelfShielded ? "is-stealth" : ""}`}
+                onClick={handleToggleSelfShield}
+                title={
+                  isSelfShielded
+                    ? "StreamShield is hidden from capture (Click to make visible)"
+                    : "StreamShield is visible on capture (Click to hide)"
+                }
+                type="button"
+                aria-label="Toggle stealth mode"
+              >
+                {isSelfShielded ? <IconEyeOff size={15} /> : <IconEye size={15} />}
+              </button>
+
+              {/* Expand back to full view */}
+              <button
+                className="compact-mode-action-btn"
+                onClick={() => handleToggleCompact(false)}
+                title="Expand to Full View"
+                type="button"
+                aria-label="Full View"
+              >
+                <IconExpand size={13} />
+              </button>
+
+              {/* Window Controls */}
+              <button
+                className="compact-window-btn btn-min"
                 onClick={handleMinimizeWindow}
                 title="Minimize Window"
                 aria-label="Minimize"
               >
-                <IconMinimize size={13} />
+                <IconMinimize size={11} />
               </button>
               <button
-                className="window-control-btn btn-maximize"
-                onClick={handleToggleMaximize}
-                title={isMaximized ? "Restore Window" : "Maximize Window"}
-                aria-label={isMaximized ? "Restore" : "Maximize"}
-              >
-                {isMaximized ? <IconRestore size={13} /> : <IconMaximize size={13} />}
-              </button>
-              <button
-                className="window-control-btn btn-close"
+                className="compact-window-btn btn-close"
                 onClick={handleHideToTray}
                 title="Hide to System Tray"
                 aria-label="Close"
               >
-                <IconClose size={13} />
+                <IconClose size={11} />
               </button>
             </div>
-          </div>
+          ) : (
+            <div className="header-action-group">
+              {/* Theme Selector Popover */}
+              <div className="theme-picker-container" onClick={(e) => e.stopPropagation()}>
+                <button
+                  className="theme-picker-trigger"
+                  onClick={() => setThemeMenuOpen(!themeMenuOpen)}
+                  title="Select Theme Preset"
+                >
+                  <span className="picker-dot" />
+                  <span className="picker-text">{THEMES.find((t) => t.id === theme)?.name}</span>
+                  <span className="picker-caret">▾</span>
+                </button>
+
+                {themeMenuOpen && (
+                  <div className="theme-popover-menu">
+                    <div className="theme-popover-title">Themes</div>
+                    {THEMES.map((t) => (
+                      <button
+                        key={t.id}
+                        className={`theme-menu-choice ${theme === t.id ? "is-selected" : ""}`}
+                        onClick={() => {
+                          setTheme(t.id);
+                          handleUpdateSettings({ ...settings, theme: t.id });
+                          setThemeMenuOpen(false);
+                        }}
+                      >
+                        <div className="theme-color-dots">
+                          <span style={{ background: t.colors[0] }} />
+                          <span style={{ background: t.colors[1] }} />
+                        </div>
+                        <span className="theme-choice-name">{t.name}</span>
+                        {theme === t.id && <span className="theme-selected-mark">✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Compact Mode Toggle on regular page */}
+              <button
+                className="header-compact-mode-btn"
+                onClick={() => handleToggleCompact(true)}
+                title="Switch to Compact Mode"
+                type="button"
+                aria-label="Compact Mode"
+              >
+                <IconCompact size={15} />
+              </button>
+
+              {/* Settings Gear Button */}
+              <button
+                className="settings-gear-btn"
+                onClick={() => setSettingsOpen(true)}
+                title="Open StreamShield Preferences"
+              >
+                <IconGear size={16} />
+              </button>
+
+              {/* Window Controls Divider & Suite */}
+              <div className="window-controls-divider" />
+
+              <div className="window-controls-group" onClick={(e) => e.stopPropagation()}>
+                <button
+                  className="window-control-btn btn-minimize"
+                  onClick={handleMinimizeWindow}
+                  title="Minimize Window"
+                  aria-label="Minimize"
+                >
+                  <IconMinimize size={13} />
+                </button>
+                <button
+                  className="window-control-btn btn-maximize"
+                  onClick={handleToggleMaximize}
+                  title={isMaximized ? "Restore Window" : "Maximize Window"}
+                  aria-label={isMaximized ? "Restore" : "Maximize"}
+                >
+                  {isMaximized ? <IconRestore size={13} /> : <IconMaximize size={13} />}
+                </button>
+                <button
+                  className="window-control-btn btn-close"
+                  onClick={handleHideToTray}
+                  title="Hide to System Tray"
+                  aria-label="Close"
+                >
+                  <IconClose size={13} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        {!isAdmin && (
+        {!settings.compact_mode && !isAdmin && (
           <div className="admin-status-banner">
             <IconAlert size={14} className="banner-icon" />
             <span>Administrator permissions recommended for full process capture exclusion</span>
@@ -529,7 +641,7 @@ export default function App() {
         )}
 
         {/* Automatic Release Update Alert Banner */}
-        {updateInfo?.hasUpdate && (
+        {!settings.compact_mode && updateInfo?.hasUpdate && (
           <div className="update-alert-banner">
             <div className="update-banner-info">
               <span className="update-indicator-dot" />
@@ -561,119 +673,125 @@ export default function App() {
         )}
 
         {/* Status bar & Batch controls */}
-        <div className="header-status-strip">
-          <div className="home-update-container">
-            <button
-              type="button"
-              className={`home-check-update-btn ${updateInfo?.hasUpdate ? "has-update" : ""}`}
-              onClick={updateInfo?.hasUpdate ? handleApplyUpdate : handleManualCheckUpdates}
-              disabled={checkingUpdate || isUpdating}
-              title={updateInfo?.hasUpdate ? "Click to install latest update" : "Check for latest StreamShield releases"}
-            >
-              <span className={`update-status-dot ${updateInfo?.hasUpdate ? "is-available" : ""}`} />
-              <span className="update-btn-text">
-                {checkingUpdate
-                  ? "Checking..."
-                  : isUpdating
-                  ? "Installing..."
-                  : updateInfo?.hasUpdate
-                  ? `Update to v${updateInfo.latestVersion}`
-                  : "Check for Updates"}
-              </span>
-            </button>
-          </div>
+        {!settings.compact_mode && (
+          <div className="header-status-strip">
+            <div className="home-update-container">
+              <button
+                type="button"
+                className={`home-check-update-btn ${updateInfo?.hasUpdate ? "has-update" : ""}`}
+                onClick={updateInfo?.hasUpdate ? handleApplyUpdate : handleManualCheckUpdates}
+                disabled={checkingUpdate || isUpdating}
+                title={updateInfo?.hasUpdate ? "Click to install latest update" : "Check for latest StreamShield releases"}
+              >
+                <span className={`update-status-dot ${updateInfo?.hasUpdate ? "is-available" : ""}`} />
+                <span className="update-btn-text">
+                  {checkingUpdate
+                    ? "Checking..."
+                    : isUpdating
+                    ? "Installing..."
+                    : updateInfo?.hasUpdate
+                    ? `Update to v${updateInfo.latestVersion}`
+                    : "Check for Updates"}
+                </span>
+              </button>
+            </div>
 
-          <div className="batch-controls">
-            <button
-              className="batch-btn"
-              onClick={handleBatchShieldClick}
-              disabled={windows.length === 0}
-              title="Shield all running applications"
-            >
-              Shield All
-            </button>
-            <button
-              className="batch-btn"
-              onClick={handleBatchClearClick}
-              disabled={shieldedCount === 0}
-              title="Unshield all applications"
-            >
-              Clear
-            </button>
-            <button
-              className={`refresh-icon-btn ${refreshing ? "is-spinning" : ""}`}
-              onClick={handleRefresh}
-              title="Refresh window list"
-            >
-              <IconRefresh size={14} />
-            </button>
+            <div className="batch-controls">
+              <button
+                className="batch-btn"
+                onClick={handleBatchShieldClick}
+                disabled={windows.length === 0}
+                title="Shield all running applications"
+              >
+                Shield All
+              </button>
+              <button
+                className="batch-btn"
+                onClick={handleBatchClearClick}
+                disabled={shieldedCount === 0}
+                title="Unshield all applications"
+              >
+                Clear
+              </button>
+              <button
+                className={`refresh-icon-btn ${refreshing ? "is-spinning" : ""}`}
+                onClick={handleRefresh}
+                title="Refresh window list"
+              >
+                <IconRefresh size={14} />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </header>
 
-      {/* Search & Navigation Bar */}
-      <section className="search-filter-section">
-        <div className="search-input-shell">
-          <IconSearch size={14} className="search-input-icon" />
-          <input
-            className="search-text-input"
-            type="text"
-            placeholder="Search processes or windows..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          {search && (
-            <button className="search-clear-cross" onClick={() => setSearch("")}>
-              <IconClose size={12} />
-            </button>
-          )}
-        </div>
+      {/* Search & Navigation Bar (Full Mode Only) */}
+      {!settings.compact_mode && (
+        <section className="search-filter-section">
+          <div className="search-input-shell">
+            <IconSearch size={14} className="search-input-icon" />
+            <input
+              className="search-text-input"
+              type="text"
+              placeholder="Search processes or windows..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button className="search-clear-cross" onClick={() => setSearch("")}>
+                <IconClose size={12} />
+              </button>
+            )}
+          </div>
 
-        <nav className="tab-segmented-control">
-          <button
-            className={`tab-segment-btn ${filterMode === "all" ? "is-current" : ""}`}
-            onClick={() => setFilterMode("all")}
-          >
-            All <span className="tab-count">{windows.length}</span>
-          </button>
-          <button
-            className={`tab-segment-btn ${filterMode === "shielded" ? "is-current" : ""}`}
-            onClick={() => setFilterMode("shielded")}
-          >
-            Shielded <span className="tab-count">{shieldedCount}</span>
-          </button>
-          <button
-            className={`tab-segment-btn ${filterMode === "unshielded" ? "is-current" : ""}`}
-            onClick={() => setFilterMode("unshielded")}
-          >
-            Open <span className="tab-count">{windows.length - shieldedCount}</span>
-          </button>
-        </nav>
-      </section>
+          <nav className="tab-segmented-control">
+            <button
+              className={`tab-segment-btn ${filterMode === "all" ? "is-current" : ""}`}
+              onClick={() => setFilterMode("all")}
+            >
+              All <span className="tab-count">{windows.length}</span>
+            </button>
+            <button
+              className={`tab-segment-btn ${filterMode === "shielded" ? "is-current" : ""}`}
+              onClick={() => setFilterMode("shielded")}
+            >
+              Shielded <span className="tab-count">{shieldedCount}</span>
+            </button>
+            <button
+              className={`tab-segment-btn ${filterMode === "unshielded" ? "is-current" : ""}`}
+              onClick={() => setFilterMode("unshielded")}
+            >
+              Open <span className="tab-count">{windows.length - shieldedCount}</span>
+            </button>
+          </nav>
+        </section>
+      )}
 
       {/* Main List Body */}
       <main className={`app-card-viewport ${settings.compact_mode ? "is-compact" : ""}`}>
         {loading ? (
-          <div className="card-skeleton-stack">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="card-skeleton" />
+          <div className={`card-skeleton-stack ${settings.compact_mode ? "is-compact" : ""}`}>
+            {Array.from({ length: settings.compact_mode ? 8 : 6 }).map((_, i) => (
+              <div key={i} className={settings.compact_mode ? "compact-skeleton-tile" : "card-skeleton"} />
             ))}
           </div>
-        ) : filtered.length === 0 ? (
+        ) : (settings.compact_mode ? windows : filtered).length === 0 ? (
           <div className="empty-results-view">
             <div className="empty-glyph-box">
               <IconShield size={38} className="empty-glyph-svg" />
             </div>
             <div className="empty-title-text">No Applications Found</div>
-            <div className="empty-subtitle-text">
-              {search
-                ? "No matching windows found. Try another search query."
-                : "No active application windows found. Open an application and click Refresh."}
-            </div>
+            {!settings.compact_mode && (
+              <div className="empty-subtitle-text">
+                {search
+                  ? "No matching windows found. Try another search query."
+                  : "No active application windows found. Open an application and click Refresh."}
+              </div>
+            )}
           </div>
         ) : (
           <div className={`cards-layout-stack ${settings.compact_mode ? "is-compact" : ""}`}>
-            {filtered.map((win) => (
+            {(settings.compact_mode ? windows : filtered).map((win) => (
               <AppRow
                 key={`${win.pid}-${win.hwnd}`}
                 window={win}
@@ -687,33 +805,35 @@ export default function App() {
         )}
       </main>
 
-      {/* Bottom Footer */}
-      <footer className="app-bottom-footer">
-        <div className="footer-coverage-indicator">
-          <div className="coverage-bar-track">
-            <div className="coverage-bar-value" style={{ width: `${percentage}%` }} />
+      {/* Bottom Footer (Full Mode Only) */}
+      {!settings.compact_mode && (
+        <footer className="app-bottom-footer">
+          <div className="footer-coverage-indicator">
+            <div className="coverage-bar-track">
+              <div className="coverage-bar-value" style={{ width: `${percentage}%` }} />
+            </div>
+            <span className="coverage-text">
+              <strong>{shieldedCount}</strong> of {windows.length} Protected
+            </span>
           </div>
-          <span className="coverage-text">
-            <strong>{shieldedCount}</strong> of {windows.length} Protected
-          </span>
-        </div>
 
-        <div className="footer-right-actions">
-          {/* Stream Mode for StreamShield itself */}
-          <button
-            className={`self-stealth-toggle-btn ${isSelfShielded ? "is-active" : ""}`}
-            onClick={handleToggleSelfShield}
-            title={
-              isSelfShielded
-                ? "StreamShield is hidden from capture"
-                : "Hide StreamShield window itself from screen capture"
-            }
-          >
-            <span className="stealth-indicator-dot" />
-            <span className="stealth-label">Stealth: {isSelfShielded ? "ON" : "OFF"}</span>
-          </button>
-        </div>
-      </footer>
+          <div className="footer-right-actions">
+            {/* Stream Mode for StreamShield itself */}
+            <button
+              className={`self-stealth-toggle-btn ${isSelfShielded ? "is-active" : ""}`}
+              onClick={handleToggleSelfShield}
+              title={
+                isSelfShielded
+                  ? "StreamShield is hidden from capture"
+                  : "Hide StreamShield window itself from screen capture"
+              }
+            >
+              <span className="stealth-indicator-dot" />
+              <span className="stealth-label">Stealth: {isSelfShielded ? "ON" : "OFF"}</span>
+            </button>
+          </div>
+        </footer>
+      )}
 
       {/* Settings Modal */}
       <SettingsModal

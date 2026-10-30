@@ -1,4 +1,5 @@
 import React from "react";
+import { IconShieldCheck } from "./Icons";
 
 export interface WindowInfo {
   hwnd: number;
@@ -41,9 +42,45 @@ export default function AppRow({
   const initial = cleanName[0]?.toUpperCase() ?? "?";
   const { bg, color } = getFallbackGradient(win.exe_name);
 
+  if (compactMode) {
+    return (
+      <button
+        className={`compact-app-tile ${shielded ? "is-shielded" : "is-unshielded"}`}
+        id={`compact-tile-${win.pid}-${win.hwnd}`}
+        onClick={() => onToggle(win, !shielded)}
+        title={`${cleanName}: ${shielded ? "Protected (Tap to unshield)" : "Open (Tap to shield)"}`}
+        type="button"
+        aria-label={`${cleanName}: ${shielded ? "Protected" : "Open"}`}
+      >
+        <div className="compact-app-icon-slot">
+          {win.icon_base64 ? (
+            <img
+              src={win.icon_base64}
+              alt={cleanName}
+              className="compact-native-icon"
+              loading="lazy"
+              onError={(e) => {
+                (e.target as HTMLElement).style.display = "none";
+              }}
+            />
+          ) : (
+            <div className="compact-fallback-avatar" style={{ background: bg, borderColor: color }}>
+              <span className="fallback-letter" style={{ color }}>{initial}</span>
+            </div>
+          )}
+        </div>
+        {shielded && (
+          <span className="compact-shield-badge">
+            <IconShieldCheck size={11} />
+          </span>
+        )}
+      </button>
+    );
+  }
+
   return (
     <div
-      className={`app-card ${shielded ? "is-shielded" : ""} ${compactMode ? "is-compact" : ""}`}
+      className={`app-card ${shielded ? "is-shielded" : ""}`}
       id={`app-row-${win.pid}-${win.hwnd}`}
       onClick={(e) => {
         const target = e.target as HTMLElement;
@@ -98,6 +135,7 @@ export default function AppRow({
             type="checkbox"
             checked={shielded}
             onChange={(e) => onToggle(win, e.target.checked)}
+            aria-label={`Toggle shield for ${cleanName}`}
           />
           <span className="toggle-rail">
             <span className="toggle-knob" />

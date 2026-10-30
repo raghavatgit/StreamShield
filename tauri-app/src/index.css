@@ -2209,3 +2209,284 @@ input,
   background: #10b981;
   box-shadow: 0 0 6px #10b981;
 }
+
+/* ── Compact Mode Architecture ────────────────────────────── */
+.streamshield-root.is-compact {
+  border-radius: 12px;
+  border: 1px solid var(--border-card);
+  overflow: hidden;
+  background: var(--bg-app);
+}
+
+.app-top-header.is-compact {
+  padding: 6px 10px;
+  min-height: 40px;
+  border-bottom: 1px solid var(--border-card);
+  background: var(--bg-surface);
+}
+
+.app-top-header.is-compact .app-header-logo {
+  width: 20px;
+  height: 20px;
+}
+
+.header-compact-mode-btn {
+  background: transparent;
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.header-compact-mode-btn:hover {
+  background: var(--bg-card-hover, rgba(255, 255, 255, 0.08));
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+  transform: scale(1.05);
+}
+
+.compact-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* Master Shield All / Clear Switch */
+.compact-master-toggle {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.compact-master-rail {
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--border-card);
+  position: relative;
+  display: flex;
+  align-items: center;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.compact-master-knob {
+  position: absolute;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.compact-master-glyph {
+  color: #0f172a;
+}
+
+.compact-master-toggle.is-all .compact-master-rail {
+  background: var(--toggle-rail-on, #10b981);
+  border-color: var(--toggle-rail-on, #10b981);
+  box-shadow: 0 0 10px var(--glow-accent, rgba(16, 185, 129, 0.4));
+}
+
+.compact-master-toggle.is-all .compact-master-knob {
+  left: 18px;
+  background: #ffffff;
+}
+
+.compact-master-toggle.is-all .compact-master-glyph {
+  color: var(--toggle-rail-on, #10b981);
+}
+
+.compact-master-toggle.is-partial .compact-master-rail {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: var(--border-hover);
+}
+
+.compact-master-toggle.is-partial .compact-master-knob {
+  left: 10px;
+  background: var(--text-primary);
+}
+
+/* Stealth Eye Button (Slashed when hidden, normal when visible) */
+.compact-eye-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.compact-eye-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.compact-eye-btn.is-stealth {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.14);
+  border-color: rgba(56, 189, 248, 0.35);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.25);
+}
+
+.compact-mode-action-btn,
+.compact-window-btn {
+  background: transparent;
+  border: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.compact-mode-action-btn:hover,
+.compact-window-btn.btn-min:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.compact-window-btn.btn-close:hover {
+  background: rgba(239, 68, 68, 0.22);
+  color: #f87171;
+}
+
+/* Compact App Grid Layout */
+.app-card-viewport.is-compact {
+  padding: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: calc(100vh - 42px);
+}
+
+.cards-layout-stack.is-compact {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+  width: 100%;
+}
+
+.compact-app-tile {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--border-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.compact-app-tile:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-hover);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.compact-app-tile:active {
+  transform: scale(0.93);
+}
+
+.compact-app-tile.is-shielded {
+  background: var(--bg-card-shielded, rgba(16, 185, 129, 0.14));
+  border-color: var(--border-active, #10b981);
+  box-shadow: 0 0 14px var(--glow-accent, rgba(16, 185, 129, 0.35));
+  opacity: 1;
+}
+
+.compact-app-tile.is-unshielded {
+  opacity: 0.55;
+}
+
+.compact-app-tile.is-unshielded:hover {
+  opacity: 0.92;
+}
+
+.compact-app-icon-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.compact-native-icon {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.45));
+}
+
+.compact-fallback-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.compact-shield-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--toggle-rail-on, #10b981);
+  color: #042f2e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 6px var(--glow-accent, #10b981);
+  pointer-events: none;
+}
+
+.card-skeleton-stack.is-compact {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+  width: 100%;
+}
+
+.compact-skeleton-tile {
+  aspect-ratio: 1;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  animation: pulse 1.5s infinite;
+}

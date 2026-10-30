@@ -11,7 +11,7 @@ use tauri::{
     menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     webview::WebviewWindowBuilder,
-    Emitter, Manager, State, WebviewUrl, WebviewWindow,
+    Emitter, LogicalSize, Manager, Size, State, WebviewUrl, WebviewWindow,
 };
 use window_manager::WindowInfo;
 use config::{load_config, save_config, AppSettings, ShieldConfig};
@@ -312,6 +312,11 @@ fn create_tray_menu(app: &tauri::AppHandle) -> Result<Menu<tauri::Wry>, Box<dyn 
     let m_monitor = MenuItem::with_id(app, "tray_mode_monitor", mode_monitor_label, true, None::<&str>)?;
     let mode_submenu = Submenu::with_items(app, "🎯  Shield Mode", true, &[&m_exclude, &m_monitor])?;
 
+    // ── Compact Mode Toggle ──
+    let is_compact = state.config.lock().map(|c| c.settings.compact_mode).unwrap_or(false);
+    let compact_label = if is_compact { "✓  Compact Mode" } else { "○  Compact Mode" };
+    let m_compact = MenuItem::with_id(app, "tray_toggle_compact", compact_label, true, None::<&str>)?;
+
     let sep3 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit StreamShield", true, None::<&str>)?;
 
@@ -323,6 +328,7 @@ fn create_tray_menu(app: &tauri::AppHandle) -> Result<Menu<tauri::Wry>, Box<dyn 
         &apps_submenu,
         &quick_actions,
         &mode_submenu,
+        &m_compact,
         &sep3,
         &quit,
     ])?;
@@ -633,6 +639,33 @@ fn get_capture_environment() -> nvidia_bypass::CaptureEnvironment {
     nvidia_bypass::detect_capture_environment()
 }
 
+fn apply_window_compact_mode(win: &WebviewWindow, compact: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if compact {
+        let _ = win.set_min_size(Some(Size::Logical(LogicalSize::new(260.0, 340.0))));
+        let _ = win.set_size(Size::Logical(LogicalSize::new(280.0, 420.0)));
+    } else {
+        let _ = win.set_min_size(Some(Size::Logical(LogicalSize::new(440.0, 580.0))));
+        let _ = win.set_size(Size::Logical(LogicalSize::new(520.0, 720.0)));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn set_compact_mode(app: tauri::AppHandle, compact: bool) -> Result<bool, String> {
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut cfg) = state.config.lock() {
+            cfg.settings.compact_mode = compact;
+            let _ = save_config(&cfg);
+        }
+        let _ = rebuild_tray_menu(&app);
+    }
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = apply_window_compact_mode(&w, compact);
+        let _ = w.emit("compact_mode_changed", compact);
+    }
+    Ok(compact)
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 /// Create the main webview window on demand.
@@ -648,17 +681,31 @@ fn create_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::
         return Ok(());
     }
 
-    let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+    let is_compact = app.try_state::<AppState>()
+        .and_then(|s| s.config.lock().ok().map(|c| c.settings.compact_mode))
+        .unwrap_or(false);
+
+    let (w, h, min_w, min_h) = if is_compact {
+        (280.0, 420.0, 260.0, 340.0)
+    } else {
+        (520.0, 720.0, 440.0, 580.0)
+    };
+
+    let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
         .title("StreamShield")
-        .inner_size(520.0, 720.0)
-        .min_inner_size(440.0, 580.0)
+        .inner_size(w, h)
+        .min_inner_size(min_w, min_h)
         .resizable(true)
         .center()
         .decorations(false)
         .visible(true)
-        .additional_browser_args("--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows")
-        .build()?;
+        .additional_browser_args("--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows");
 
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone())?;
+    }
+
+    let win = builder.build()?;
     let _ = win.set_focus();
     Ok(())
 }
@@ -692,7 +739,7 @@ fn main() {
             get_settings, update_settings, reset_settings, clear_all_shields,
             check_admin, hide_to_tray, minimize_window, toggle_maximize_window,
             toggle_self_shield, is_self_shielded, get_capture_environment,
-            open_external_url, install_update_silent
+            open_external_url, install_update_silent, set_compact_mode
         ])
         .setup(move |app| {
             let args: Vec<String> = std::env::args().collect();
@@ -853,6 +900,26 @@ fn main() {
                                 let _ = rebuild_tray_menu(app);
                                 if let Some(w) = app.get_webview_window("main") {
                                     let _ = w.emit("tray_action_completed", "mode_changed");
+                                }
+                            }
+                        }
+                        "tray_toggle_compact" => {
+                            if let Some(state) = app.try_state::<AppState>() {
+                                let new_compact = {
+                                    let mut cfg = match state.config.lock() {
+                                        Ok(c) => c,
+                                        Err(_) => return,
+                                    };
+                                    cfg.settings.compact_mode = !cfg.settings.compact_mode;
+                                    let val = cfg.settings.compact_mode;
+                                    let _ = save_config(&cfg);
+                                    val
+                                };
+                                let _ = rebuild_tray_menu(app);
+                                if let Some(w) = app.get_webview_window("main") {
+                                    let _ = apply_window_compact_mode(&w, new_compact);
+                                    let _ = w.emit("compact_mode_changed", new_compact);
+                                    let _ = w.emit("tray_action_completed", "compact_toggled");
                                 }
                             }
                         }
