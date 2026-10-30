@@ -106,7 +106,7 @@ export default function App() {
         showToast(`Update v${info.latestVersion} available!`, "success");
       } else {
         setUpdateInfo(null);
-        showToast("StreamShield is up to date (v0.2.1)", "info");
+        showToast("StreamShield is up to date (v0.2.2)", "info");
       }
     } catch {
       showToast("Could not connect to update server", "error");

@@ -7,7 +7,7 @@ export interface UpdateInfo {
   releaseNotes?: string;
 }
 
-export const CURRENT_VERSION = "0.2.1";
+export const CURRENT_VERSION = "0.2.2";
 
 export async function checkForAppUpdate(): Promise<UpdateInfo> {
   try {
