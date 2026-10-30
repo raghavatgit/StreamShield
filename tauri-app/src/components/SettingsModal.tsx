@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ThemeType } from "../App";
+import { ThemeType, THEMES, applyDynamicTheme } from "../utils/themeEngine";
 import { checkForAppUpdate, CURRENT_VERSION, UpdateInfo } from "../utils/updater";
 import {
   IconGear,
@@ -38,17 +38,7 @@ export interface CaptureEnvironment {
   summary: string;
 }
 
-interface ThemeChoice {
-  id: ThemeType;
-  name: string;
-  colors: string[];
-}
 
-const THEMES: ThemeChoice[] = [
-  { id: "discord", name: "Discord Dark", colors: ["#5865f2", "#23a55a"] },
-  { id: "cyberpunk", name: "Cyberpunk", colors: ["#00f0ff", "#ff007f"] },
-  { id: "neumorphic-white", name: "Clean White", colors: ["#ffffff", "#4f46e5"] },
-];
 
 const SCAN_INTERVALS = [
   { value: 2000, label: "2 seconds (Fast & Responsive)" },
@@ -439,7 +429,10 @@ export default function SettingsModal({
                     <div
                       key={t.id}
                       className={`theme-card-preview ${settings.theme === t.id ? "is-active" : ""}`}
-                      onClick={() => handleToggle("theme", t.id)}
+                      onClick={() => {
+                        handleToggle("theme", t.id);
+                        applyDynamicTheme(t.id);
+                      }}
                     >
                       <div className="theme-swatch-strip">
                         {t.colors.map((c, i) => (

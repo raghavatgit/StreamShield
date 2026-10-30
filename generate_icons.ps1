@@ -2,7 +2,7 @@ Add-Type -AssemblyName System.Drawing
 
 $iconsDir = "D:\Users\GOYAL\Documents\work\StreamShield\tauri-app\src-tauri\icons"
 $publicDir = "D:\Users\GOYAL\Documents\work\StreamShield\tauri-app\public"
-$srcPath = Join-Path $iconsDir "icon.png"
+$srcPath = Join-Path $publicDir "logo.png"
 
 if (!(Test-Path $iconsDir)) { New-Item -ItemType Directory -Path $iconsDir -Force }
 if (!(Test-Path $publicDir)) { New-Item -ItemType Directory -Path $publicDir -Force }
@@ -12,38 +12,26 @@ $bytes = [System.IO.File]::ReadAllBytes($srcPath)
 $msSrc = New-Object System.IO.MemoryStream($bytes, $false)
 $srcImg = [System.Drawing.Image]::FromStream($msSrc)
 
-function Get-RoundedBitmap($img, $size) {
+function Get-ResizedBitmap($img, $size) {
     $bmp = New-Object System.Drawing.Bitmap($size, $size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
     $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
     $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
     $g.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
     $g.Clear([System.Drawing.Color]::Transparent)
-
-    $radius = [float]($size * 0.18)
-    $diameter = [float]($radius * 2.0)
-
-    $path = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $path.AddArc(0.0, 0.0, $diameter, $diameter, 180.0, 90.0)
-    $path.AddArc([float]($size - $diameter), 0.0, $diameter, $diameter, 270.0, 90.0)
-    $path.AddArc([float]($size - $diameter), [float]($size - $diameter), $diameter, $diameter, 0.0, 90.0)
-    $path.AddArc(0.0, [float]($size - $diameter), $diameter, $diameter, 90.0, 90.0)
-    $path.CloseFigure()
-
-    $g.SetClip($path)
     $g.DrawImage($img, 0, 0, $size, $size)
-    $g.ResetClip()
     $g.Dispose()
-    $path.Dispose()
     return $bmp
 }
 
 # 1. Save standard PNGs
 $sizes = @(
     @{ Name = "icon.png"; Size = 512 },
+    @{ Name = "256x256.png"; Size = 256 },
     @{ Name = "128x128.png"; Size = 128 },
     @{ Name = "128x128@2x.png"; Size = 256 },
+    @{ Name = "64x64.png"; Size = 64 },
     @{ Name = "32x32.png"; Size = 32 },
     @{ Name = "Square30x30Logo.png"; Size = 30 },
     @{ Name = "Square44x44Logo.png"; Size = 44 },
@@ -55,26 +43,19 @@ $sizes = @(
 )
 
 foreach ($s in $sizes) {
-    $resized = Get-RoundedBitmap $srcImg $s.Size
+    $resized = Get-ResizedBitmap $srcImg $s.Size
     $dest = Join-Path $iconsDir $s.Name
     $resized.Save($dest, [System.Drawing.Imaging.ImageFormat]::Png)
     $resized.Dispose()
     Write-Output "Saved $dest"
 }
 
-# Also save to public/logo.png for frontend UI
-$logoResized = Get-RoundedBitmap $srcImg 256
-$logoDest = Join-Path $publicDir "logo.png"
-$logoResized.Save($logoDest, [System.Drawing.Imaging.ImageFormat]::Png)
-$logoResized.Dispose()
-Write-Output "Saved $logoDest"
-
 # 2. Build multi-resolution icon.ico
 $icoSizes = @(16, 24, 32, 48, 64, 128, 256)
 $pngStreams = @()
 
 foreach ($sz in $icoSizes) {
-    $bmp = Get-RoundedBitmap $srcImg $sz
+    $bmp = Get-ResizedBitmap $srcImg $sz
     $ms = New-Object System.IO.MemoryStream
     $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
     $bmp.Dispose()

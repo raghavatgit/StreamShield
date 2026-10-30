@@ -187,17 +187,24 @@ input,
 .header-logo-group {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
 }
 
 .app-header-logo {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  object-fit: cover;
+  width: 25px;
+  height: 25px;
+  object-fit: contain;
   flex-shrink: 0;
-  box-shadow: 0 0 8px var(--glow-accent);
-  border: 1px solid var(--border-card);
+  filter: drop-shadow(0 0 8px rgba(0, 195, 255, 0.45));
+}
+
+.header-app-wordmark {
+  height: 19px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+  user-select: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
 }
 
 .header-app-title {
@@ -262,7 +269,9 @@ input,
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
-  width: 190px;
+  width: 195px;
+  max-height: 290px;
+  overflow-y: auto;
   background: var(--bg-surface);
   border: 1px solid var(--border-card);
   border-radius: 8px;
@@ -1644,6 +1653,61 @@ input,
 }
 
 /* Theme Selection Cards */
+.theme-selection-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.theme-card-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.theme-card-preview:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-active);
+  transform: translateY(-1px);
+}
+
+.theme-card-preview.is-active {
+  border-color: var(--primary);
+  box-shadow: 0 0 12px var(--glow-accent);
+}
+
+.theme-swatch-strip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.theme-color-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.theme-card-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-left: 6px;
+  flex: 1;
+}
+
+.theme-active-tick {
+  color: var(--primary);
+}
+
 .theme-selection-cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

@@ -19,20 +19,9 @@ import {
   IconMaximize,
   IconRestore,
 } from "./components/Icons";
+import { ThemeType, THEMES, applyDynamicTheme } from "./utils/themeEngine";
 
-export type ThemeType = "discord" | "cyberpunk" | "neumorphic-white";
-
-interface ThemeOption {
-  id: ThemeType;
-  name: string;
-  colors: string[];
-}
-
-const THEMES: ThemeOption[] = [
-  { id: "discord", name: "Discord Dark", colors: ["#5865f2", "#23a55a"] },
-  { id: "cyberpunk", name: "Cyberpunk", colors: ["#00f0ff", "#ff007f"] },
-  { id: "neumorphic-white", name: "Clean White", colors: ["#ffffff", "#4f46e5"] },
-];
+export type { ThemeType };
 
 export default function App() {
   const [windows, setWindows] = useState<WindowInfo[]>([]);
@@ -59,7 +48,7 @@ export default function App() {
   const [batchConfirmState, setBatchConfirmState] = useState<"shield_all" | "clear_all" | null>(null);
 
   const [theme, setTheme] = useState<ThemeType>(() => {
-    return (localStorage.getItem("streamshield_theme") as ThemeType) || "cyberpunk";
+    return (localStorage.getItem("streamshield_theme") as ThemeType) || "violet";
   });
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -122,9 +111,9 @@ export default function App() {
     }
   };
 
-  // Apply theme to document root
+  // Apply dynamic theme and peripherals to document root
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
+    applyDynamicTheme(theme);
     localStorage.setItem("streamshield_theme", theme);
   }, [theme]);
 
@@ -450,7 +439,7 @@ export default function App() {
         <div className="header-main-row" data-tauri-drag-region>
           <div className="header-logo-group" data-tauri-drag-region>
             <img src="/logo.png" className="app-header-logo" alt="StreamShield" data-tauri-drag-region />
-            <span className="header-app-title" data-tauri-drag-region>StreamShield</span>
+            <img src="/text-logo.png" className="header-app-wordmark" alt="StreamShield" data-tauri-drag-region />
           </div>
 
           <div className="header-action-group">
