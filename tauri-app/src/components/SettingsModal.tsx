@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ThemeType } from "../App";
+import { checkForAppUpdate, CURRENT_VERSION, UpdateInfo } from "../utils/updater";
 import {
   IconGear,
   IconStartup,
@@ -85,6 +86,29 @@ export default function SettingsModal({
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [captureEnv, setCaptureEnv] = useState<CaptureEnvironment | null>(null);
+
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateResult, setUpdateResult] = useState<string | null>(null);
+  const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
+
+  const handleCheckForUpdates = async () => {
+    setUpdateChecking(true);
+    setUpdateResult(null);
+    try {
+      const info = await checkForAppUpdate();
+      if (info.hasUpdate) {
+        setAvailableUpdate(info);
+        setUpdateResult(`v${info.latestVersion} available!`);
+      } else {
+        setAvailableUpdate(null);
+        setUpdateResult("StreamShield is up to date");
+      }
+    } catch {
+      setUpdateResult("Could not reach update server");
+    } finally {
+      setUpdateChecking(false);
+    }
+  };
 
   // Load capture environment diagnostics when modal opens
   useEffect(() => {
@@ -529,7 +553,7 @@ export default function SettingsModal({
                 </div>
                 <div className="diag-row">
                   <span className="diag-key">Version:</span>
-                  <span className="diag-val">v0.2.0</span>
+                  <span className="diag-val">v{CURRENT_VERSION}</span>
                 </div>
                 <div className="diag-row">
                   <span className="diag-key">Privileges:</span>
@@ -538,6 +562,31 @@ export default function SettingsModal({
                 <div className="diag-row">
                   <span className="diag-key">Windows:</span>
                   <span className="diag-val">{totalWindows} detected</span>
+                </div>
+
+                <div className="diag-update-section">
+                  <button
+                    type="button"
+                    className="diag-update-btn"
+                    onClick={handleCheckForUpdates}
+                    disabled={updateChecking}
+                  >
+                    {updateChecking ? "Checking..." : "Check for Updates"}
+                  </button>
+                  {updateResult && (
+                    <span className={`diag-update-status ${availableUpdate ? "is-update" : ""}`}>
+                      {updateResult}
+                    </span>
+                  )}
+                  {availableUpdate?.releaseUrl && (
+                    <button
+                      type="button"
+                      className="diag-download-btn"
+                      onClick={() => invoke("open_external_url", { url: availableUpdate.releaseUrl })}
+                    >
+                      Download v{availableUpdate.latestVersion}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

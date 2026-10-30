@@ -592,6 +592,43 @@ fn is_self_shielded(window: WebviewWindow) -> bool {
 
 
 #[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        use winapi::um::shellapi::ShellExecuteW;
+        use winapi::um::winuser::SW_SHOWNORMAL;
+        fn wide(s: &str) -> Vec<u16> { OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect() }
+        let url_w = wide(&url);
+        let verb_w = wide("open");
+        unsafe {
+            ShellExecuteW(std::ptr::null_mut(), verb_w.as_ptr(), url_w.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn install_update_silent(download_url: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let ps_cmd = format!(
+            "$temp = \"$env:TEMP\\StreamShield_Setup.exe\"; \
+             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; \
+             Invoke-WebRequest -Uri \"{}\" -OutFile $temp; \
+             Start-Process -FilePath $temp -ArgumentList \"/S\"",
+            download_url
+        );
+        std::process::Command::new("powershell")
+            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_cmd])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn get_capture_environment() -> nvidia_bypass::CaptureEnvironment {
     nvidia_bypass::detect_capture_environment()
 }
@@ -654,7 +691,8 @@ fn main() {
             get_windows, toggle_shield, get_shielded_exes, reapply_shields,
             get_settings, update_settings, reset_settings, clear_all_shields,
             check_admin, hide_to_tray, minimize_window, toggle_maximize_window,
-            toggle_self_shield, is_self_shielded, get_capture_environment
+            toggle_self_shield, is_self_shielded, get_capture_environment,
+            open_external_url, install_update_silent
         ])
         .setup(move |app| {
             let args: Vec<String> = std::env::args().collect();

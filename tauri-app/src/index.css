@@ -1975,3 +1975,115 @@ input,
   border-color: #bfdbfe;
   color: #1e40af;
 }
+
+/* ── Auto Update Banner & Diagnostics ─────────────────────── */
+.update-alert-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(16, 185, 129, 0.12);
+  border-top: 1px solid rgba(16, 185, 129, 0.25);
+  border-bottom: 1px solid rgba(16, 185, 129, 0.25);
+  padding: 6px 14px;
+  font-size: 11.5px;
+  color: #34d399;
+}
+
+.update-banner-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.update-indicator-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+}
+
+.update-banner-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.update-apply-btn {
+  background: #10b981;
+  color: #064e3b;
+  font-weight: 700;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.update-apply-btn:hover {
+  background: #34d399;
+}
+
+.update-view-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.update-dismiss-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+.diag-update-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-card);
+}
+
+.diag-update-btn {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border-card);
+  color: var(--text-primary);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.diag-update-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.diag-update-status {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.diag-update-status.is-update {
+  color: #34d399;
+  font-weight: 600;
+}
+
+.diag-download-btn {
+  background: #10b981;
+  color: #064e3b;
+  border: none;
+  font-weight: 600;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+}

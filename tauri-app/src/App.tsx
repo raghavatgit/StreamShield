@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import AppRow, { WindowInfo } from "./components/AppRow";
 import SettingsModal, { AppSettings } from "./components/SettingsModal";
+import { checkForAppUpdate, UpdateInfo } from "./utils/updater";
 import {
   IconGear,
   IconRefresh,
@@ -67,6 +68,39 @@ export default function App() {
   const [toast, setToast] = useState<{ message: string; type?: "error" | "info" | "success" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLoadTime = useRef<number>(0);
+
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    checkForAppUpdate()
+      .then((info) => {
+        if (info.hasUpdate) {
+          setUpdateInfo(info);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleApplyUpdate = async () => {
+    if (!updateInfo?.setupDownloadUrl) {
+      if (updateInfo?.releaseUrl) {
+        await invoke("open_external_url", { url: updateInfo.releaseUrl });
+      }
+      return;
+    }
+    setIsUpdating(true);
+    showToast("Downloading and applying update in background...", "info");
+    try {
+      await invoke("install_update_silent", { downloadUrl: updateInfo.setupDownloadUrl });
+      showToast("Update installer started! App will update shortly.", "success");
+    } catch {
+      showToast("Opening release download page...", "info");
+      await invoke("open_external_url", { url: updateInfo.releaseUrl });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   // Apply theme to document root
   useEffect(() => {
@@ -482,6 +516,38 @@ export default function App() {
           <div className="admin-status-banner">
             <IconAlert size={14} className="banner-icon" />
             <span>Administrator permissions recommended for full process capture exclusion</span>
+          </div>
+        )}
+
+        {/* Automatic Release Update Alert Banner */}
+        {updateInfo?.hasUpdate && (
+          <div className="update-alert-banner">
+            <div className="update-banner-info">
+              <span className="update-indicator-dot" />
+              <span>Update available: <strong>v{updateInfo.latestVersion}</strong></span>
+            </div>
+            <div className="update-banner-btns">
+              <button
+                className="update-apply-btn"
+                onClick={handleApplyUpdate}
+                disabled={isUpdating}
+              >
+                {isUpdating ? "Installing..." : "Update Now"}
+              </button>
+              <button
+                className="update-view-btn"
+                onClick={() => invoke("open_external_url", { url: updateInfo.releaseUrl })}
+              >
+                Release Notes
+              </button>
+              <button
+                className="update-dismiss-btn"
+                onClick={() => setUpdateInfo(null)}
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         )}
 
