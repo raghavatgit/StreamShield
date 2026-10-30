@@ -102,6 +102,26 @@ export default function App() {
     }
   };
 
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+
+  const handleManualCheckUpdates = async () => {
+    setCheckingUpdate(true);
+    try {
+      const info = await checkForAppUpdate();
+      if (info.hasUpdate) {
+        setUpdateInfo(info);
+        showToast(`Update v${info.latestVersion} available!`, "success");
+      } else {
+        setUpdateInfo(null);
+        showToast("StreamShield is up to date (v0.2.1)", "info");
+      }
+    } catch {
+      showToast("Could not connect to update server", "error");
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
   // Apply theme to document root
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -553,13 +573,25 @@ export default function App() {
 
         {/* Status bar & Batch controls */}
         <div className="header-status-strip">
-          <div className={`active-counter-badge ${shieldedCount > 0 ? "is-active" : "is-idle"}`}>
-            <span className="pulse-dot" />
-            <span className="counter-text">
-              {shieldedCount > 0
-                ? `${shieldedCount} Application${shieldedCount !== 1 ? "s" : ""} Protected`
-                : "No Applications Shielded"}
-            </span>
+          <div className="home-update-container">
+            <button
+              type="button"
+              className={`home-check-update-btn ${updateInfo?.hasUpdate ? "has-update" : ""}`}
+              onClick={updateInfo?.hasUpdate ? handleApplyUpdate : handleManualCheckUpdates}
+              disabled={checkingUpdate || isUpdating}
+              title={updateInfo?.hasUpdate ? "Click to install latest update" : "Check for latest StreamShield releases"}
+            >
+              <span className={`update-status-dot ${updateInfo?.hasUpdate ? "is-available" : ""}`} />
+              <span className="update-btn-text">
+                {checkingUpdate
+                  ? "Checking..."
+                  : isUpdating
+                  ? "Installing..."
+                  : updateInfo?.hasUpdate
+                  ? `Update to v${updateInfo.latestVersion}`
+                  : "Check for Updates"}
+              </span>
+            </button>
           </div>
 
           <div className="batch-controls">

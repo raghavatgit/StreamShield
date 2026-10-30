@@ -21,9 +21,16 @@ function Get-RoundedBitmap($img, $size) {
     $g.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
     $g.Clear([System.Drawing.Color]::Transparent)
 
+    $radius = [float]($size * 0.18)
+    $diameter = [float]($radius * 2.0)
+
     $path = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $pad = [Math]::Max(1.0, $size * 0.012)
-    $path.AddEllipse($pad, $pad, $size - (2 * $pad), $size - (2 * $pad))
+    $path.AddArc(0.0, 0.0, $diameter, $diameter, 180.0, 90.0)
+    $path.AddArc([float]($size - $diameter), 0.0, $diameter, $diameter, 270.0, 90.0)
+    $path.AddArc([float]($size - $diameter), [float]($size - $diameter), $diameter, $diameter, 0.0, 90.0)
+    $path.AddArc(0.0, [float]($size - $diameter), $diameter, $diameter, 90.0, 90.0)
+    $path.CloseFigure()
+
     $g.SetClip($path)
     $g.DrawImage($img, 0, 0, $size, $size)
     $g.ResetClip()
