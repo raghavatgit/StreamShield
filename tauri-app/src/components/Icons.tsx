@@ -169,3 +169,15 @@ export const IconWidget: React.FC<IconProps> = ({ size = 15, className = "", col
   </svg>
 );
 
+export const IconGrip: React.FC<IconProps> = ({ size = 12, className = "", color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke="none" className={className}>
+    <circle cx="9" cy="6" r="1.7" />
+    <circle cx="15" cy="6" r="1.7" />
+    <circle cx="9" cy="12" r="1.7" />
+    <circle cx="15" cy="12" r="1.7" />
+    <circle cx="9" cy="18" r="1.7" />
+    <circle cx="15" cy="18" r="1.7" />
+  </svg>
+);
+
+

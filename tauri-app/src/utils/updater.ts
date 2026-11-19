@@ -7,7 +7,7 @@ export interface UpdateInfo {
   releaseNotes?: string;
 }
 
-export const CURRENT_VERSION = "0.2.3";
+export const CURRENT_VERSION = "0.2.4";
 
 export async function checkForAppUpdate(): Promise<UpdateInfo> {
   try {
@@ -26,10 +26,11 @@ export async function checkForAppUpdate(): Promise<UpdateInfo> {
     const releaseUrl = data.html_url || "https://github.com/raghavatgit/StreamShield/releases/latest";
     const releaseNotes = data.body || "";
 
-    const setupAsset = (data.assets || []).find((a: any) =>
-      a.name && (a.name.endsWith("-setup.exe") || a.name.endsWith(".exe"))
-    );
-    const setupDownloadUrl = setupAsset ? setupAsset.browser_download_url : undefined;
+    const assets: any[] = data.assets || [];
+    const nsisSetup = assets.find((a) => a.name && a.name.toLowerCase().endsWith("-setup.exe"));
+    const msiSetup = assets.find((a) => a.name && a.name.toLowerCase().endsWith(".msi"));
+    const chosenAsset = nsisSetup || msiSetup;
+    const setupDownloadUrl = chosenAsset ? chosenAsset.browser_download_url : undefined;
 
     const hasUpdate = isNewerVersion(tag, CURRENT_VERSION);
 
@@ -59,4 +60,3 @@ function isNewerVersion(remote: string, current: string): boolean {
   }
   return false;
 }
-

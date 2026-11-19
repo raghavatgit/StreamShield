@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import AppRow, { WindowInfo } from "./components/AppRow";
-import SettingsModal, { AppSettings } from "./components/SettingsModal";
-import { checkForAppUpdate, UpdateInfo } from "./utils/updater";
+import SettingsModal, { AppSettings, OsInfo } from "./components/SettingsModal";
+import { checkForAppUpdate, CURRENT_VERSION, UpdateInfo } from "./utils/updater";
+import { formatBackendError } from "./utils/win32ErrorCodes";
 import {
   IconGear,
   IconRefresh,
@@ -14,7 +15,6 @@ import {
   IconInfo,
   IconAlert,
   IconShield,
-  IconExternalLink,
   IconMinimize,
   IconMaximize,
   IconRestore,
@@ -34,14 +34,14 @@ export default function App() {
   const [isSelfShielded, setIsSelfShielded] = useState(false);
   const [search, setSearch] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "shielded" | "unshielded">("all");
-  
+
   const [settings, setSettings] = useState<AppSettings>({
     autostart: false,
     start_minimized: false,
     auto_reapply: true,
     shield_mode: "exclude",
     poll_interval_ms: 3000,
-    theme: (localStorage.getItem("streamshield_theme") as ThemeType) || "cyberpunk",
+    theme: (localStorage.getItem("streamshield_theme") as ThemeType) || "violet",
     compact_mode: false,
     show_pid: true,
     confirm_batch: false,
@@ -63,12 +63,23 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isAdmin, setIsAdmin] = useState(true);
-  const [toast, setToast] = useState<{ message: string; type?: "error" | "info" | "success" } | null>(null);
+  const [osInfo, setOsInfo] = useState<OsInfo | null>(null);
+  const [toast, setToast] = useState<{ id: number; message: string; type?: "error" | "info" | "success" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastIdRef = useRef<number>(0);
   const lastLoadTime = useRef<number>(0);
 
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  const showToast = useCallback((message: string, type: "error" | "info" | "success" = "error") => {
+    const id = ++toastIdRef.current;
+    setToast({ id, message, type });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
+  }, []);
 
   useEffect(() => {
     checkForAppUpdate()
@@ -83,7 +94,7 @@ export default function App() {
   const handleApplyUpdate = async () => {
     if (!updateInfo?.setupDownloadUrl) {
       if (updateInfo?.releaseUrl) {
-        await invoke("open_external_url", { url: updateInfo.releaseUrl });
+        await invoke("open_external_url", { url: updateInfo.releaseUrl }).catch(() => {});
       }
       return;
     }
@@ -94,13 +105,13 @@ export default function App() {
       showToast("Update installer started! App will update shortly.", "success");
     } catch {
       showToast("Opening release download page...", "info");
-      await invoke("open_external_url", { url: updateInfo.releaseUrl });
+      if (updateInfo.releaseUrl) {
+        await invoke("open_external_url", { url: updateInfo.releaseUrl }).catch(() => {});
+      }
     } finally {
       setIsUpdating(false);
     }
   };
-
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   const handleManualCheckUpdates = async () => {
     setCheckingUpdate(true);
@@ -111,7 +122,7 @@ export default function App() {
         showToast(`Update v${info.latestVersion} available!`, "success");
       } else {
         setUpdateInfo(null);
-        showToast("StreamShield is up to date (v0.2.3)", "info");
+        showToast(`StreamShield is up to date (v${CURRENT_VERSION})`, "info");
       }
     } catch {
       showToast("Could not connect to update server", "error");
@@ -126,12 +137,6 @@ export default function App() {
     localStorage.setItem("streamshield_theme", theme);
   }, [theme]);
 
-  const showToast = (message: string, type: "error" | "info" | "success" = "error") => {
-    setToast({ message, type });
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 3500);
-  };
-
   const loadSettings = useCallback(async () => {
     try {
       const s = await invoke<AppSettings>("get_settings");
@@ -140,7 +145,6 @@ export default function App() {
         setTheme(s.theme as ThemeType);
       }
       if (s.self_stealth !== undefined) {
-        await invoke("toggle_self_shield", { enable: s.self_stealth }).catch(() => {});
         setIsSelfShielded(s.self_stealth);
       }
     } catch (e) {
@@ -149,23 +153,14 @@ export default function App() {
   }, []);
 
   const loadWindows = useCallback(async (force?: boolean) => {
-    // Debounce: skip if last call was <500ms ago (prevents triple-fire on focus)
     const now = Date.now();
     if (!force && now - lastLoadTime.current < 500) return;
     lastLoadTime.current = now;
 
     try {
-      const [wins, admin, selfShielded] = await Promise.all([
-        invoke<WindowInfo[]>("get_windows"),
-        invoke<boolean>("check_admin"),
-        invoke<boolean>("is_self_shielded").catch(() => false),
-      ]);
-
+      const wins = await invoke<WindowInfo[]>("get_windows");
       setWindows(wins);
-      setIsAdmin(admin);
-      setIsSelfShielded(selfShielded);
 
-      // Populate active shield state directly from Windows OS query
       const activeShielded = new Set<string>();
       for (const w of wins) {
         if (w.is_shielded) {
@@ -181,19 +176,25 @@ export default function App() {
     }
   }, []);
 
+  // One-time startup queries + permanent Tauri event listeners
   useEffect(() => {
     loadSettings();
-    loadWindows();
+    loadWindows(true);
 
-    let interval: ReturnType<typeof setInterval> | null = null;
-    if (settings.poll_interval_ms > 0) {
-      interval = setInterval(() => {
-        // Only run frontend poll when window is visible to save resources
-        if (document.visibilityState === "visible") {
-          loadWindows();
-        }
-      }, settings.poll_interval_ms);
-    }
+    invoke<boolean>("check_admin").then(setIsAdmin).catch(() => {});
+    invoke<OsInfo>("get_os_info")
+      .then((info) => {
+        setOsInfo(info);
+        document.documentElement.setAttribute("data-os", info.is_win11 ? "win11" : "win10");
+      })
+      .catch(() => {});
+    invoke<boolean>("is_self_shielded").then(setIsSelfShielded).catch(() => {});
+
+    const curWin = getCurrentWindow();
+    curWin.isMaximized().then(setIsMaximized).catch(() => {});
+    const unlistenResize = curWin.onResized(() => {
+      curWin.isMaximized().then(setIsMaximized).catch(() => {});
+    });
 
     const onFocus = () => loadWindows();
     const onVisibilityChange = () => {
@@ -201,12 +202,19 @@ export default function App() {
         loadWindows();
       }
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setThemeMenuOpen(false);
+        setBatchConfirmState(null);
+      }
+    };
 
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("keydown", onKeyDown);
 
     const unlistenWake = listen("app_wake", () => {
-      loadWindows();
+      loadWindows(true);
     });
 
     const unlistenTray = listen("tray_action_completed", (event) => {
@@ -227,11 +235,7 @@ export default function App() {
 
     const unlistenCompact = listen<boolean>("compact_mode_changed", (event) => {
       setSettings((prev) => ({ ...prev, compact_mode: event.payload }));
-      if (event.payload) {
-        showToast("Compact Mode active", "info");
-      } else {
-        showToast("Full View restored", "info");
-      }
+      showToast(event.payload ? "Compact Mode active" : "Full View restored", "info");
     });
 
     const unlistenWidget = listen<boolean>("widget_state_changed", (event) => {
@@ -239,40 +243,67 @@ export default function App() {
     });
 
     const unlistenShield = listen("shield_state_changed", () => {
-      loadWindows();
+      loadWindows(true);
     });
 
     const unlistenSelfShield = listen<boolean>("self_shield_changed", (event) => {
       setIsSelfShielded(event.payload);
     });
 
+    const unlistenSettings = listen<AppSettings>("settings_changed", (event) => {
+      const s = event.payload;
+      setSettings(s);
+      if (s.theme) setTheme(s.theme as ThemeType);
+      if (s.self_stealth !== undefined) setIsSelfShielded(s.self_stealth);
+    });
+
     return () => {
-      if (interval) clearInterval(interval);
+      if (toastTimer.current) clearTimeout(toastTimer.current);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("keydown", onKeyDown);
+      unlistenResize.then((unlisten) => unlisten());
       unlistenWake.then((unlisten) => unlisten());
       unlistenTray.then((unlisten) => unlisten());
       unlistenCompact.then((unlisten) => unlisten());
       unlistenWidget.then((unlisten) => unlisten());
       unlistenShield.then((unlisten) => unlisten());
       unlistenSelfShield.then((unlisten) => unlisten());
+      unlistenSettings.then((unlisten) => unlisten());
     };
-  }, [loadWindows, loadSettings, settings.poll_interval_ms]);
+  }, [loadWindows, loadSettings, showToast]);
+
+  // Dedicated polling interval effect (avoids tearing down listeners when interval changes)
+  useEffect(() => {
+    if (settings.poll_interval_ms <= 0) return;
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        loadWindows();
+      }
+    }, settings.poll_interval_ms);
+    return () => clearInterval(interval);
+  }, [settings.poll_interval_ms, loadWindows]);
 
   const handleToggleWidget = async () => {
+    const next = !settings.widget_enabled;
     try {
-      const next = !settings.widget_enabled;
-      await invoke("toggle_widget", { enable: next });
-      setSettings((prev) => ({ ...prev, widget_enabled: next }));
-      showToast(next ? "Desktop Widget enabled" : "Desktop Widget hidden", "info");
+      const result = await invoke<boolean>("toggle_widget", { enable: next });
+      setSettings((prev) => ({ ...prev, widget_enabled: result }));
+      showToast(result ? "Desktop Widget enabled" : "Desktop Widget hidden", "info");
     } catch (e) {
-      console.error(e);
+      showToast(formatBackendError(e), "error");
     }
   };
 
   const handleStartDrag = (e: React.MouseEvent) => {
-    if (e.button === 0 && !(e.target as HTMLElement).closest("button, input, select, a, .theme-picker-container, [data-no-drag]")) {
-      invoke("start_window_drag", { windowLabel: "main" });
+    if (
+      e.button === 0 &&
+      e.detail === 1 &&
+      !(e.target as HTMLElement).closest("button, input, select, a, .theme-picker-container, [data-no-drag]")
+    ) {
+      invoke("start_window_drag", { windowLabel: "main" }).catch(() => {
+        getCurrentWindow().startDragging().catch(() => {});
+      });
     }
   };
 
@@ -280,9 +311,8 @@ export default function App() {
     try {
       await invoke("set_compact_mode", { compact: enable });
       setSettings((prev) => ({ ...prev, compact_mode: enable }));
-      showToast(enable ? "Compact Mode enabled" : "Full View restored", "info");
     } catch (e) {
-      showToast(String(e), "error");
+      showToast(formatBackendError(e), "error");
     }
   };
 
@@ -295,7 +325,7 @@ export default function App() {
       }
       showToast("Settings saved", "success");
     } catch (e) {
-      showToast(String(e).replace("Error: ", ""), "error");
+      showToast(formatBackendError(e), "error");
     }
   };
 
@@ -308,7 +338,7 @@ export default function App() {
       }
       showToast("Settings reset to defaults", "info");
     } catch (e) {
-      showToast(String(e).replace("Error: ", ""), "error");
+      showToast(formatBackendError(e), "error");
     }
   };
 
@@ -320,7 +350,7 @@ export default function App() {
       showToast("All applications unshielded", "info");
       await loadWindows(true);
     } catch (e) {
-      showToast(String(e).replace("Error: ", ""), "error");
+      showToast(formatBackendError(e), "error");
     }
   };
 
@@ -330,75 +360,60 @@ export default function App() {
     showToast("Application list refreshed", "info");
   };
 
-  const handleToggle = async (win: WindowInfo, enable: boolean) => {
-    // Optimistic update
-    setShieldedExes((prev) => {
-      const next = new Set(prev);
-      if (enable) next.add(win.exe_name);
-      else next.delete(win.exe_name);
-      return next;
-    });
-
-    setWindows((prev) =>
-      prev.map((w) =>
-        w.exe_name.toLowerCase() === win.exe_name.toLowerCase()
-          ? { ...w, is_shielded: enable }
-          : w
-      )
-    );
-
-    try {
-      await invoke<boolean>("toggle_shield", {
-        exeName: win.exe_name,
-        hwnd: win.hwnd,
-        pid: win.pid,
-        enable,
-      });
-      showToast(
-        enable ? `Shielded ${win.exe_name}` : `Unshielded ${win.exe_name}`,
-        enable ? "success" : "info"
-      );
-    } catch (e) {
-      // Revert on failure
+  const handleToggle = useCallback(
+    async (win: WindowInfo, enable: boolean) => {
       setShieldedExes((prev) => {
         const next = new Set(prev);
-        if (enable) next.delete(win.exe_name);
-        else next.add(win.exe_name);
+        if (enable) next.add(win.exe_name);
+        else next.delete(win.exe_name);
         return next;
       });
+
       setWindows((prev) =>
         prev.map((w) =>
-          w.exe_name.toLowerCase() === win.exe_name.toLowerCase()
-            ? { ...w, is_shielded: !enable }
-            : w
+          w.exe_name.toLowerCase() === win.exe_name.toLowerCase() ? { ...w, is_shielded: enable } : w
         )
       );
-      showToast(String(e).replace("Error: ", ""), "error");
-    }
-  };
+
+      try {
+        await invoke<boolean>("toggle_shield", {
+          exeName: win.exe_name,
+          hwnd: win.hwnd,
+          pid: win.pid,
+          enable,
+        });
+        showToast(enable ? `Shielded ${win.exe_name}` : `Unshielded ${win.exe_name}`, enable ? "success" : "info");
+      } catch (e) {
+        setShieldedExes((prev) => {
+          const next = new Set(prev);
+          if (enable) next.delete(win.exe_name);
+          else next.add(win.exe_name);
+          return next;
+        });
+        setWindows((prev) =>
+          prev.map((w) =>
+            w.exe_name.toLowerCase() === win.exe_name.toLowerCase() ? { ...w, is_shielded: !enable } : w
+          )
+        );
+        showToast(formatBackendError(e), "error");
+      }
+    },
+    [showToast]
+  );
 
   const handleToggleSelfShield = async () => {
     const next = !isSelfShielded;
     try {
       await invoke<boolean>("toggle_self_shield", { enable: next });
       setIsSelfShielded(next);
-      handleUpdateSettings({ ...settings, self_stealth: next });
       showToast(
-        next
-          ? "StreamShield app is now hidden from streams"
-          : "StreamShield app is now visible on streams",
+        next ? "StreamShield app is now hidden from streams" : "StreamShield app is now visible on streams",
         next ? "success" : "info"
       );
     } catch (e) {
-      showToast(String(e), "error");
+      showToast(formatBackendError(e), "error");
     }
   };
-
-  const [isMaximized, setIsMaximized] = useState(false);
-
-  useEffect(() => {
-    getCurrentWindow().isMaximized().then(setIsMaximized).catch(() => {});
-  }, []);
 
   const handleMinimizeWindow = async () => {
     try {
@@ -441,21 +456,23 @@ export default function App() {
   };
 
   const handleShieldAll = async () => {
-    const toShield = windows.filter((w) => !shieldedExes.has(w.exe_name));
-    if (toShield.length === 0) return;
-
-    for (const win of toShield) {
-      await handleToggle(win, true);
+    if (windows.length === 0) return;
+    try {
+      const count = await invoke<number>("shield_all_windows");
+      await loadWindows(true);
+      showToast(
+        count > 0 ? `Shielded ${count} application(s)` : "All open applications are already shielded",
+        "success"
+      );
+    } catch (e) {
+      showToast(formatBackendError(e), "error");
+      await loadWindows(true);
     }
   };
 
   const handleUnshieldAll = async () => {
-    const toUnshield = windows.filter((w) => shieldedExes.has(w.exe_name));
-    if (toUnshield.length === 0) return;
-
-    for (const win of toUnshield) {
-      await handleToggle(win, false);
-    }
+    if (shieldedCount === 0) return;
+    await handleClearAllShields();
   };
 
   const handleBatchShieldClick = () => {
@@ -474,16 +491,18 @@ export default function App() {
     }
   };
 
-  const filtered = windows.filter((w) => {
-    const matchesSearch =
-      w.exe_name.toLowerCase().includes(search.toLowerCase()) ||
-      w.title.toLowerCase().includes(search.toLowerCase());
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return windows.filter((w) => {
+      const matchesSearch =
+        !q || w.exe_name.toLowerCase().includes(q) || w.title.toLowerCase().includes(q);
 
-    const isShielded = shieldedExes.has(w.exe_name);
-    if (filterMode === "shielded") return matchesSearch && isShielded;
-    if (filterMode === "unshielded") return matchesSearch && !isShielded;
-    return matchesSearch;
-  });
+      const isShielded = shieldedExes.has(w.exe_name);
+      if (filterMode === "shielded") return matchesSearch && isShielded;
+      if (filterMode === "unshielded") return matchesSearch && !isShielded;
+      return matchesSearch;
+    });
+  }, [windows, search, filterMode, shieldedExes]);
 
   const shieldedCount = windows.filter((w) => shieldedExes.has(w.exe_name)).length;
   const percentage = windows.length > 0 ? Math.round((shieldedCount / windows.length) * 100) : 0;
@@ -534,7 +553,7 @@ export default function App() {
                 </span>
               </button>
 
-              {/* Stealth Display Eye (Slashed when hidden, normal when visible) */}
+              {/* Stealth Display Eye */}
               <button
                 className={`compact-eye-btn ${isSelfShielded ? "is-stealth" : ""}`}
                 onClick={handleToggleSelfShield}
@@ -577,6 +596,7 @@ export default function App() {
                 onClick={handleMinimizeWindow}
                 title="Minimize Window"
                 aria-label="Minimize"
+                type="button"
               >
                 <IconMinimize size={11} />
               </button>
@@ -585,6 +605,7 @@ export default function App() {
                 onClick={handleHideToTray}
                 title="Hide to System Tray"
                 aria-label="Close"
+                type="button"
               >
                 <IconClose size={11} />
               </button>
@@ -594,6 +615,7 @@ export default function App() {
               {/* Theme Selector Popover */}
               <div className="theme-picker-container" onClick={(e) => e.stopPropagation()}>
                 <button
+                  type="button"
                   className="theme-picker-trigger"
                   onClick={() => setThemeMenuOpen(!themeMenuOpen)}
                   title="Select Theme Preset"
@@ -608,6 +630,7 @@ export default function App() {
                     <div className="theme-popover-title">Themes</div>
                     {THEMES.map((t) => (
                       <button
+                        type="button"
                         key={t.id}
                         className={`theme-menu-choice ${theme === t.id ? "is-selected" : ""}`}
                         onClick={() => {
@@ -652,6 +675,7 @@ export default function App() {
 
               {/* Settings Gear Button */}
               <button
+                type="button"
                 className="settings-gear-btn"
                 onClick={() => setSettingsOpen(true)}
                 title="Open StreamShield Preferences"
@@ -664,6 +688,7 @@ export default function App() {
 
               <div className="window-controls-group" onClick={(e) => e.stopPropagation()}>
                 <button
+                  type="button"
                   className="window-control-btn btn-minimize"
                   onClick={handleMinimizeWindow}
                   title="Minimize Window"
@@ -672,6 +697,7 @@ export default function App() {
                   <IconMinimize size={13} />
                 </button>
                 <button
+                  type="button"
                   className="window-control-btn btn-maximize"
                   onClick={handleToggleMaximize}
                   title={isMaximized ? "Restore Window" : "Maximize Window"}
@@ -680,6 +706,7 @@ export default function App() {
                   {isMaximized ? <IconRestore size={13} /> : <IconMaximize size={13} />}
                 </button>
                 <button
+                  type="button"
                   className="window-control-btn btn-close"
                   onClick={handleHideToTray}
                   title="Hide to System Tray"
@@ -704,10 +731,13 @@ export default function App() {
           <div className="update-alert-banner">
             <div className="update-banner-info">
               <span className="update-indicator-dot" />
-              <span>Update available: <strong>v{updateInfo.latestVersion}</strong></span>
+              <span>
+                Update available: <strong>v{updateInfo.latestVersion}</strong>
+              </span>
             </div>
             <div className="update-banner-btns">
               <button
+                type="button"
                 className="update-apply-btn"
                 onClick={handleApplyUpdate}
                 disabled={isUpdating}
@@ -715,12 +745,14 @@ export default function App() {
                 {isUpdating ? "Installing..." : "Update Now"}
               </button>
               <button
+                type="button"
                 className="update-view-btn"
-                onClick={() => invoke("open_external_url", { url: updateInfo.releaseUrl })}
+                onClick={() => invoke("open_external_url", { url: updateInfo.releaseUrl }).catch(() => {})}
               >
                 Release Notes
               </button>
               <button
+                type="button"
                 className="update-dismiss-btn"
                 onClick={() => setUpdateInfo(null)}
                 title="Dismiss"
@@ -757,6 +789,7 @@ export default function App() {
 
             <div className="batch-controls">
               <button
+                type="button"
                 className="batch-btn"
                 onClick={handleBatchShieldClick}
                 disabled={windows.length === 0}
@@ -765,6 +798,7 @@ export default function App() {
                 Shield All
               </button>
               <button
+                type="button"
                 className="batch-btn"
                 onClick={handleBatchClearClick}
                 disabled={shieldedCount === 0}
@@ -773,6 +807,7 @@ export default function App() {
                 Clear
               </button>
               <button
+                type="button"
                 className={`refresh-icon-btn ${refreshing ? "is-spinning" : ""}`}
                 onClick={handleRefresh}
                 title="Refresh window list"
@@ -797,7 +832,7 @@ export default function App() {
               onChange={(e) => setSearch(e.target.value)}
             />
             {search && (
-              <button className="search-clear-cross" onClick={() => setSearch("")}>
+              <button type="button" className="search-clear-cross" onClick={() => setSearch("")}>
                 <IconClose size={12} />
               </button>
             )}
@@ -805,18 +840,21 @@ export default function App() {
 
           <nav className="tab-segmented-control">
             <button
+              type="button"
               className={`tab-segment-btn ${filterMode === "all" ? "is-current" : ""}`}
               onClick={() => setFilterMode("all")}
             >
               All <span className="tab-count">{windows.length}</span>
             </button>
             <button
+              type="button"
               className={`tab-segment-btn ${filterMode === "shielded" ? "is-current" : ""}`}
               onClick={() => setFilterMode("shielded")}
             >
               Shielded <span className="tab-count">{shieldedCount}</span>
             </button>
             <button
+              type="button"
               className={`tab-segment-btn ${filterMode === "unshielded" ? "is-current" : ""}`}
               onClick={() => setFilterMode("unshielded")}
             >
@@ -877,8 +915,8 @@ export default function App() {
           </div>
 
           <div className="footer-right-actions">
-            {/* Stream Mode for StreamShield itself */}
             <button
+              type="button"
               className={`self-stealth-toggle-btn ${isSelfShielded ? "is-active" : ""}`}
               onClick={handleToggleSelfShield}
               title={
@@ -905,6 +943,7 @@ export default function App() {
         shieldedCount={shieldedCount}
         totalWindows={windows.length}
         isAdmin={isAdmin}
+        osInfo={osInfo}
       />
 
       {/* Batch Action Confirmation Dialog */}
@@ -923,10 +962,11 @@ export default function App() {
                 : `This will remove capture protection from all ${shieldedCount} protected window(s).`}
             </p>
             <div className="confirm-btn-row">
-              <button className="confirm-cancel-btn" onClick={() => setBatchConfirmState(null)}>
+              <button type="button" className="confirm-cancel-btn" onClick={() => setBatchConfirmState(null)}>
                 Cancel
               </button>
               <button
+                type="button"
                 className="confirm-danger-btn"
                 onClick={async () => {
                   if (batchConfirmState === "shield_all") {
@@ -946,9 +986,15 @@ export default function App() {
 
       {/* Floating Toast Notification */}
       {toast && (
-        <div className={`floating-toast ${toast.type || "error"}`}>
+        <div key={toast.id} className={`floating-toast ${toast.type || "error"}`}>
           <span className="toast-symbol">
-            {toast.type === "success" ? <IconCheck size={13} /> : toast.type === "info" ? <IconInfo size={13} /> : <IconAlert size={13} />}
+            {toast.type === "success" ? (
+              <IconCheck size={13} />
+            ) : toast.type === "info" ? (
+              <IconInfo size={13} />
+            ) : (
+              <IconAlert size={13} />
+            )}
           </span>
           <span className="toast-message-body">{toast.message}</span>
         </div>
@@ -956,4 +1002,3 @@ export default function App() {
     </div>
   );
 }
-

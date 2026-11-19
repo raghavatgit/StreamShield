@@ -1,30 +1,34 @@
 //! Window display affinity via DLL injection for cross-process shielding.
-//! Uses CreateToolhelp32Snapshot for correct 64-bit ASLR remote base address.
+//! Uses CreateToolhelp32Snapshot for correct 64-bit ASLR remote base address,
+//! LoadLibraryW for Unicode paths, and WoW64 safety checks.
 
 use std::ptr::null_mut;
 
 const DLL_BYTES: &[u8] = include_bytes!("shield_dll.dll");
 
+const WDA_NONE: u32 = 0x00000000;
+const WDA_MONITOR: u32 = 0x00000001;
+const WDA_EXCLUDEFROMCAPTURE: u32 = 0x00000011;
+
 /// Clean up any stale DLL temp files from previous sessions
 pub fn cleanup_stale_dlls() {
     let our_name_prefix = "streamshield_hook_";
     if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
+        let our_dll = format!("streamshield_hook_{}.dll", std::process::id());
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with(our_name_prefix) && name.ends_with(".dll") {
-                // Don't delete our own current session's DLL
-                let our_dll = format!("streamshield_hook_{}.dll", std::process::id());
-                if name != our_dll {
-                    let _ = std::fs::remove_file(entry.path());
-                }
+            if name.starts_with(our_name_prefix) && name.ends_with(".dll") && name != our_dll {
+                let _ = std::fs::remove_file(entry.path());
             }
         }
     }
 }
 
 /// RAII wrapper to guarantee handle closure across all error paths
+#[cfg(windows)]
 struct AutoCloseHandle(winapi::um::winnt::HANDLE);
 
+#[cfg(windows)]
 impl Drop for AutoCloseHandle {
     fn drop(&mut self) {
         if !self.0.is_null() && self.0 != winapi::um::handleapi::INVALID_HANDLE_VALUE {
@@ -33,7 +37,7 @@ impl Drop for AutoCloseHandle {
     }
 }
 
-/// Grant AppContainer (UWP / Windows Store packaged apps like WhatsApp) read & execute rights
+/// Grant AppContainer (UWP / Windows Store packaged apps) read & execute rights
 #[cfg(windows)]
 fn grant_appcontainer_permissions(path: &std::path::Path) {
     use std::ffi::OsStr;
@@ -54,16 +58,15 @@ fn grant_appcontainer_permissions(path: &std::path::Path) {
 
     const SDDL_REVISION_1: u32 = 1;
 
-    fn wide(s: &str) -> Vec<u16> {
-        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    fn wide(s: &std::ffi::OsStr) -> Vec<u16> {
+        s.encode_wide().chain(std::iter::once(0)).collect()
     }
 
-    let path_w = wide(path.to_str().unwrap_or_default());
-    // SDDL granting Generic Read and Execute (GRGX) to:
-    // - WD: Everyone
-    // - AC: ALL APPLICATION PACKAGES (S-1-15-2-1)
-    // - RC: ALL RESTRICTED APPLICATION PACKAGES (S-1-15-2-2)
-    let sddl = wide("D:(A;;GRGX;;;WD)(A;;GRGX;;;AC)(A;;GRGX;;;RC)");
+    let path_w = wide(path.as_os_str());
+    let sddl: Vec<u16> = OsStr::new("D:(A;;GRGX;;;WD)(A;;GRGX;;;AC)(A;;GRGX;;;RC)")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
     unsafe {
         let mut p_sd: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
         if ConvertStringSecurityDescriptorToSecurityDescriptorW(
@@ -82,10 +85,65 @@ fn grant_appcontainer_permissions(path: &std::path::Path) {
     }
 }
 
+/// Apply stealth (`WDA_EXCLUDEFROMCAPTURE` with `WDA_MONITOR` fallback on older Win10 builds)
+/// directly to StreamShield's own windows without `SWP_FRAMECHANGED` or `RDW_ERASE`,
+/// preserving transparent DirectComposition alpha channels on desktop widgets.
+pub fn apply_own_window_stealth(hwnd: usize, enable: bool) -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        use winapi::um::winuser::{GetWindowDisplayAffinity, SetWindowDisplayAffinity};
+
+        let mut current: u32 = 0;
+        let got = unsafe { GetWindowDisplayAffinity(hwnd as _, &mut current) };
+        if got != 0 {
+            if enable && current == WDA_EXCLUDEFROMCAPTURE {
+                return Ok(true);
+            }
+            if !enable && current == WDA_NONE {
+                return Ok(false);
+            }
+        }
+
+        if !enable {
+            let ok = unsafe { SetWindowDisplayAffinity(hwnd as _, WDA_NONE) };
+            return if ok != 0 {
+                Ok(false)
+            } else {
+                Err(format!("Failed to clear self stealth: Win32 {}", last_os_error()))
+            };
+        }
+
+        let mut ok = unsafe { SetWindowDisplayAffinity(hwnd as _, WDA_EXCLUDEFROMCAPTURE) };
+        if ok == 0 {
+            // Reset and retry fallback to WDA_MONITOR for Windows 10 < 19041 or mode transitions
+            unsafe {
+                let _ = SetWindowDisplayAffinity(hwnd as _, WDA_NONE);
+                ok = SetWindowDisplayAffinity(hwnd as _, WDA_EXCLUDEFROMCAPTURE);
+                if ok == 0 {
+                    ok = SetWindowDisplayAffinity(hwnd as _, WDA_MONITOR);
+                }
+            }
+        }
+
+        if ok != 0 {
+            Ok(true)
+        } else {
+            Err(format!("Failed to apply stealth affinity: Win32 {}", last_os_error()))
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (hwnd, enable);
+        Ok(false)
+    }
+}
+
 /// Shield or unshield a window from screen capture.
 pub fn set_window_affinity(hwnd: usize, enable: bool, shield_mode: Option<&str>) -> Result<(), String> {
     #[cfg(windows)]
     {
+        use winapi::um::winuser::GetWindowDisplayAffinity;
+
         let our_pid = std::process::id();
         let win_pid = get_window_pid(hwnd)?;
 
@@ -93,14 +151,28 @@ pub fn set_window_affinity(hwnd: usize, enable: bool, shield_mode: Option<&str>)
             return set_affinity_direct(hwnd, enable, shield_mode);
         }
 
-        // Try direct call as first line of defense
-        let _ = set_affinity_direct(hwnd, enable, shield_mode);
+        let prefer_monitor = shield_mode.map(|m| m.eq_ignore_ascii_case("monitor")).unwrap_or(false);
+        let desired_affinity = if !enable {
+            WDA_NONE
+        } else if prefer_monitor {
+            WDA_MONITOR
+        } else {
+            WDA_EXCLUDEFROMCAPTURE
+        };
 
-        // Inject DLL for in-process affinity enforcement
+        let mut current: u32 = 0;
+        if unsafe { GetWindowDisplayAffinity(hwnd as _, &mut current) } != 0 && current == desired_affinity {
+            return Ok(());
+        }
+
+        // Cross-process SetWindowDisplayAffinity must run inside the target process context
         inject_and_shield(win_pid, hwnd, enable, shield_mode)
     }
     #[cfg(not(windows))]
-    Err("Windows only".to_string())
+    {
+        let _ = (hwnd, enable, shield_mode);
+        Err("Windows only".to_string())
+    }
 }
 
 #[cfg(windows)]
@@ -120,33 +192,29 @@ fn set_affinity_direct(hwnd: usize, enable: bool, shield_mode: Option<&str>) -> 
         SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_NOACTIVATE, SWP_FRAMECHANGED,
         RDW_INVALIDATE, RDW_ERASE, RDW_FRAME, RDW_ALLCHILDREN, RDW_UPDATENOW,
     };
-    const WDA_NONE: u32 = 0x00000000;
-    const WDA_EXCLUDEFROMCAPTURE: u32 = 0x00000011;
-    const WDA_MONITOR: u32 = 0x00000001;
 
     let prefer_monitor = shield_mode.map(|m| m.eq_ignore_ascii_case("monitor")).unwrap_or(false);
-
-    // Check current affinity - skip if already at desired value
-    let mut current: u32 = 0;
-    let got = unsafe { GetWindowDisplayAffinity(hwnd as _, &mut current) };
-    if got != 0 {
-        if enable && current != 0 {
-            if prefer_monitor && current == WDA_MONITOR { return Ok(()); }
-            if !prefer_monitor && current == WDA_EXCLUDEFROMCAPTURE { return Ok(()); }
-        }
-        if !enable && current == 0 { return Ok(()); }  // Already unshielded
-    }
-
     let affinity = if enable {
         if prefer_monitor { WDA_MONITOR } else { WDA_EXCLUDEFROMCAPTURE }
     } else {
         WDA_NONE
     };
 
+    let mut current: u32 = 0;
+    let got = unsafe { GetWindowDisplayAffinity(hwnd as _, &mut current) };
+    if got != 0 && current == affinity {
+        return Ok(());
+    }
+
     let mut ok = unsafe { SetWindowDisplayAffinity(hwnd as _, affinity) };
     if ok == 0 && enable && !prefer_monitor {
-        // Fallback to WDA_MONITOR if WDA_EXCLUDEFROMCAPTURE fails
-        ok = unsafe { SetWindowDisplayAffinity(hwnd as _, WDA_MONITOR) };
+        unsafe {
+            let _ = SetWindowDisplayAffinity(hwnd as _, WDA_NONE);
+            ok = SetWindowDisplayAffinity(hwnd as _, affinity);
+            if ok == 0 {
+                ok = SetWindowDisplayAffinity(hwnd as _, WDA_MONITOR);
+            }
+        }
     }
     if ok != 0 {
         unsafe {
@@ -209,11 +277,15 @@ fn get_remote_module_base(pid: u32, dll_filename: &str) -> Option<usize> {
 
 #[cfg(windows)]
 fn inject_and_shield(pid: u32, hwnd: usize, enable: bool, shield_mode: Option<&str>) -> Result<(), String> {
-    use winapi::um::processthreadsapi::{OpenProcess, CreateRemoteThread};
+    use std::os::windows::ffi::OsStrExt;
+    use winapi::um::processthreadsapi::{OpenProcess, CreateRemoteThread, GetExitCodeThread};
     use winapi::um::memoryapi::{VirtualAllocEx, WriteProcessMemory, VirtualFreeEx};
-    use winapi::um::libloaderapi::{LoadLibraryA, GetProcAddress, FreeLibrary};
+    use winapi::um::libloaderapi::{GetModuleHandleA, LoadLibraryW, GetProcAddress, FreeLibrary};
     use winapi::um::synchapi::WaitForSingleObject;
+    use winapi::um::winbase::WAIT_OBJECT_0;
     use winapi::um::handleapi::CloseHandle;
+    use winapi::um::winuser::GetWindowDisplayAffinity;
+    use winapi::um::wow64apiset::IsWow64Process;
     use winapi::um::winnt::{
         PROCESS_CREATE_THREAD, PROCESS_QUERY_INFORMATION,
         PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE,
@@ -230,8 +302,13 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool, shield_mode: Option<&s
             .map_err(|e| format!("Write DLL: {e}"))?;
         grant_appcontainer_permissions(&dll_path);
     }
-    let dll_cstr = std::ffi::CString::new(dll_path.to_str().ok_or("bad dll path")?)
-        .map_err(|e| e.to_string())?;
+
+    let dll_wide: Vec<u16> = dll_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let byte_len = dll_wide.len() * std::mem::size_of::<u16>();
 
     // DLL filename for module snapshot lookup (lowercase, no path)
     let dll_basename = dll_path.file_name()
@@ -248,45 +325,86 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool, shield_mode: Option<&s
         }
         let _proc_guard = AutoCloseHandle(proc_handle);
 
-        let path_len = dll_cstr.as_bytes_with_nul().len();
-
-        let remote_path = VirtualAllocEx(proc_handle, null_mut(), path_len,
-            MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-        if remote_path.is_null() {
-            return Err(format!("VirtualAllocEx: {}", last_os_error()));
+        // Guard against 32-bit (WoW64) target processes which cannot execute a 64-bit hook DLL
+        let mut is_wow64: i32 = 0;
+        if IsWow64Process(proc_handle, &mut is_wow64) != 0 && is_wow64 != 0 {
+            return Err("32-bit (WoW64) applications cannot be shielded with a 64-bit hook module".to_string());
         }
 
-        let mut written = 0usize;
-        let wpm_ok = WriteProcessMemory(proc_handle, remote_path, dll_cstr.as_ptr() as _, path_len, &mut written);
-        if wpm_ok == 0 || written != path_len {
+        // Skip redundant remote LoadLibraryW if our DLL is already mapped into this PID
+        let remote_base = if let Some(existing) = get_remote_module_base(pid, &dll_basename) {
+            existing
+        } else {
+            let remote_path = VirtualAllocEx(
+                proc_handle,
+                null_mut(),
+                byte_len,
+                MEM_COMMIT | MEM_RESERVE,
+                PAGE_READWRITE,
+            );
+            if remote_path.is_null() {
+                return Err(format!("VirtualAllocEx: {}", last_os_error()));
+            }
+
+            let mut written = 0usize;
+            let wpm_ok = WriteProcessMemory(
+                proc_handle,
+                remote_path,
+                dll_wide.as_ptr() as _,
+                byte_len,
+                &mut written,
+            );
+            if wpm_ok == 0 || written != byte_len {
+                VirtualFreeEx(proc_handle, remote_path, 0, MEM_RELEASE);
+                return Err(format!(
+                    "WriteProcessMemory failed: {} (wrote {}/{})",
+                    last_os_error(),
+                    written,
+                    byte_len
+                ));
+            }
+
+            // kernel32 maps at the same VA in every 64-bit process; GetModuleHandleA avoids refcount leaks
+            let k32 = GetModuleHandleA(b"kernel32.dll\0".as_ptr() as _);
+            if k32.is_null() {
+                VirtualFreeEx(proc_handle, remote_path, 0, MEM_RELEASE);
+                return Err(format!("GetModuleHandleA(kernel32): {}", last_os_error()));
+            }
+            let load_lib = GetProcAddress(k32, b"LoadLibraryW\0".as_ptr() as _);
+            if load_lib.is_null() {
+                VirtualFreeEx(proc_handle, remote_path, 0, MEM_RELEASE);
+                return Err(format!("GetProcAddress(LoadLibraryW): {}", last_os_error()));
+            }
+
+            let t1 = CreateRemoteThread(
+                proc_handle,
+                null_mut(),
+                0,
+                Some(std::mem::transmute(load_lib)),
+                remote_path,
+                0,
+                null_mut(),
+            );
+            if t1.is_null() {
+                VirtualFreeEx(proc_handle, remote_path, 0, MEM_RELEASE);
+                return Err(format!("CreateRemoteThread(LoadLibW): {}", last_os_error()));
+            }
+            let wait1 = WaitForSingleObject(t1, 8000);
+            CloseHandle(t1);
             VirtualFreeEx(proc_handle, remote_path, 0, MEM_RELEASE);
-            return Err(format!("WriteProcessMemory failed: {} (wrote {}/{})", last_os_error(), written, path_len));
-        }
+            if wait1 != WAIT_OBJECT_0 {
+                return Err("Remote LoadLibraryW timed out".to_string());
+            }
 
-        // kernel32 maps at the same VA in every process (shared section, no ASLR between procs)
-        let k32 = LoadLibraryA(b"kernel32.dll\0".as_ptr() as _);
-        let load_lib = GetProcAddress(k32, b"LoadLibraryA\0".as_ptr() as _);
-
-        // Inject DLL into target process
-        let t1 = CreateRemoteThread(proc_handle, null_mut(), 0,
-            Some(std::mem::transmute(load_lib)),
-            remote_path, 0, null_mut());
-        if t1.is_null() {
-            VirtualFreeEx(proc_handle, remote_path, 0, MEM_RELEASE);
-            return Err(format!("CreateRemoteThread(LoadLib): {}", last_os_error()));
-        }
-        WaitForSingleObject(t1, 8000);
-        CloseHandle(t1);
-        VirtualFreeEx(proc_handle, remote_path, 0, MEM_RELEASE);
-
-        // ── ASLR fix: use module snapshot for real 64-bit remote base ────────
-        let remote_base = get_remote_module_base(pid, &dll_basename)
-            .ok_or_else(|| format!("DLL not found in remote process modules (PID {})", pid))?;
+            // ── ASLR fix: use module snapshot for real 64-bit remote base ────────
+            get_remote_module_base(pid, &dll_basename)
+                .ok_or_else(|| format!("DLL not found in remote process modules (PID {})", pid))?
+        };
 
         // Load DLL locally to compute function offset
-        let our_dll = LoadLibraryA(dll_cstr.as_ptr());
+        let our_dll = LoadLibraryW(dll_wide.as_ptr());
         if our_dll.is_null() {
-            return Err(format!("LoadLibrary locally: {}", last_os_error()));
+            return Err(format!("LoadLibraryW locally: {}", last_os_error()));
         }
         let fn_ptr = GetProcAddress(our_dll, b"shield_window\0".as_ptr() as _);
         if fn_ptr.is_null() {
@@ -308,14 +426,35 @@ fn inject_and_shield(pid: u32, hwnd: usize, enable: bool, shield_mode: Option<&s
             | (if enable { 1usize << 63 } else { 0 })
             | (if prefer_monitor { 1usize << 62 } else { 0 });
 
-        let t2 = CreateRemoteThread(proc_handle, null_mut(), 0,
+        let t2 = CreateRemoteThread(
+            proc_handle,
+            null_mut(),
+            0,
             Some(std::mem::transmute(remote_fn)),
-            param as _, 0, null_mut());
+            param as _,
+            0,
+            null_mut(),
+        );
         if t2.is_null() {
             return Err(format!("CreateRemoteThread(shield_window): {}", last_os_error()));
         }
-        WaitForSingleObject(t2, 5000);
+        let wait2 = WaitForSingleObject(t2, 5000);
+        let mut exit_code: u32 = 0;
+        let got_exit = GetExitCodeThread(t2, &mut exit_code);
         CloseHandle(t2);
+
+        if wait2 != WAIT_OBJECT_0 {
+            return Err("Remote shield thread timed out (1460)".to_string());
+        }
+
+        if got_exit != 0 && exit_code == 0 {
+            let mut current: u32 = 0;
+            if GetWindowDisplayAffinity(hwnd as _, &mut current) != 0 {
+                if (enable && current == WDA_NONE) || (!enable && current != WDA_NONE) {
+                    return Err("Target window rejected display affinity change".to_string());
+                }
+            }
+        }
     }
 
     Ok(())

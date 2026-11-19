@@ -35,11 +35,12 @@
 -  **Hardware Multiplane Overlay (MPO) Optimization**: Prevents hardware GPU overlay plane leakage so that hardware-accelerated desktop captures and instant replays cleanly respect window privacy masks.
 -  **Zero-Latency Hardware Exclusion**: Leverages the Windows Desktop Window Manager (`DWM`) compositing pipeline natively.
 -  **100% Standalone & Portable**: Single ~3.1 MB executable. No installation required, zero background drivers, zero bloat.
--  **Comprehensive Settings Subsystem**: Windows Startup autostart, minimize to tray, customizable scan polling intervals (2s to 10s), process PID badges, and batch confirmation dialogs.
--  **3 Curated Theme Presets**:
-  -  **Cyberpunk Glow**: Electric cyan & hot pink neon with ambient backdrop glows.
-  -  **Discord Dark**: Discord-native dark palette with Emerald active accents.
-  -  **Clean White**: Crisp, high-contrast modern slate & indigo light theme.
+- **Comprehensive Settings Subsystem**: Windows Startup autostart, minimize to tray, customizable scan polling intervals (2s to 10s), process PID badges, and batch confirmation dialogs.
+- **Desktop Screen Widgets & Compact Mode**:
+  - **Floating Screen Widgets**: Dynamic Pill, Compact Dock, and Corner Status Badge HUDs masked with `WDA_EXCLUDEFROMCAPTURE` so you can control privacy on desktop while keeping streams 100% clean.
+  - **Ultra-Compact Icon Grid Mode**: One-click switch to a tight, text-free icon grid with a master switch and stealth toggle.
+- **9 Dynamic Theme Presets**:
+  - Includes **Neon Violet**, **Cyberpunk Cyan**, **Matrix Emerald**, **Crimson Ruby**, **Solar Amber**, **Ocean Sapphire**, **Discord Slate**, **Midnight Obsidian**, and **Clean Light**, dynamically generating all borders, glows, cards, and widget surfaces.
 -  **Autonomous Background Watchdog**: Automatically detects and re-shields private applications when they restart or open new secondary windows.
 -  **Anti-Sleep & Tray Throttling Protection**: Native Windows power management prevents background thread suspension when docked to the system tray.
 -  **Live Process Search & Filtering**: Instant search across running processes, window titles, and PIDs.
@@ -85,7 +86,7 @@ Download **`streamshield.exe`** from the [Latest Releases](https://github.com/ra
 - **No installation needed** - simply double-click and run!
 
 ### Option 2: Windows Installer
-Download **`StreamShield_0.2.0_x64-setup.exe`** for a standard Windows installation with Desktop and Start Menu shortcuts, or **`StreamShield_0.2.0_x64_en-US.msi`** for enterprise deployment.
+Download **`StreamShield_0.2.4_x64-setup.exe`** for a standard Windows installation with Desktop and Start Menu shortcuts, or **`StreamShield_0.2.4_x64_en-US.msi`** for enterprise deployment.
 
 ---
 
@@ -121,8 +122,8 @@ npx tauri build
 The optimized production binaries and installers will be generated at:
 ```
 target/release/streamshield.exe
-target/release/bundle/nsis/StreamShield_0.2.0_x64-setup.exe
-target/release/bundle/msi/StreamShield_0.2.0_x64_en-US.msi
+target/release/bundle/nsis/StreamShield_0.2.4_x64-setup.exe
+target/release/bundle/msi/StreamShield_0.2.4_x64_en-US.msi
 ```
 
 ---
@@ -145,29 +146,5 @@ Feel free to check the [issues page](https://github.com/raghavatgit/StreamShield
 Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for more information.
 
 <div align="center">
-  <sub>Built with  by Raghav Goyal for streamers, developers, and privacy enthusiasts.</sub>
+  <sub>Built with ❤️ by Raghav Goyal for streamers, developers, and privacy enthusiasts.</sub>
 </div>
-
-## Technical Verification (2026-10-01)
-- Verification Target: Update system requirements, winapi architectural diagrams, and license
-- Operational Status: Production Verified
-- Memory Profile: Verified zero leak and bounded heap envelope
-- Compliance: Meets standard architectural criteria
-
-## Technical Verification (2026-10-02)
-- Verification Target: Verify windows 11 24h2 compatibility and direct3d runtime matrix
-- Operational Status: Production Verified
-- Memory Profile: Verified zero leak and bounded heap envelope
-- Compliance: Meets standard architectural criteria
-
-## Technical Verification (2026-10-03)
-- Verification Target: Publish directcomposition surface isolation benchmarks and deployment guide
-- Operational Status: Production Verified
-- Memory Profile: Verified zero leak and bounded heap envelope
-- Compliance: Meets standard architectural criteria
-
-## Technical Verification (2026-10-04)
-- Verification Target: Update multi-monitor occlusion architecture, direct2d runtime specs, and license
-- Operational Status: Production Verified
-- Memory Profile: Verified zero leak and bounded heap envelope
-- Compliance: Meets standard architectural criteria

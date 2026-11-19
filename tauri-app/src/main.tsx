@@ -3,9 +3,27 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import DesktopWidget from "./components/DesktopWidget";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { ThemeType, applyDynamicTheme } from "./utils/themeEngine";
 import "./index.css";
 
+interface WidgetInitPayload {
+  style?: "pill" | "dock" | "badge";
+  theme?: ThemeType;
+  self_stealth?: boolean;
+  widget_stealth?: boolean;
+}
+
+declare global {
+  interface Window {
+    __STREAMSHIELD_WIDGET_INIT__?: WidgetInitPayload;
+  }
+}
+
 function checkIsWidget(): boolean {
+  if (typeof window !== "undefined" && window.__STREAMSHIELD_WIDGET_INIT__) {
+    return true;
+  }
+
   try {
     const curWin = getCurrentWebviewWindow();
     if (curWin && curWin.label === "widget") {
@@ -36,7 +54,17 @@ if (isWidget) {
   document.body.style.background = "transparent";
 }
 
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
+// Apply initial theme immediately before first React paint to eliminate FOUC
+const initialTheme: ThemeType =
+  (isWidget ? window.__STREAMSHIELD_WIDGET_INIT__?.theme : undefined) ||
+  (localStorage.getItem("streamshield_theme") as ThemeType) ||
+  "violet";
+applyDynamicTheme(initialTheme);
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
   constructor(props: { children: React.ReactNode }) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -53,18 +81,20 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{
-          backgroundColor: "#0a0e17",
-          color: "#00f0ff",
-          fontFamily: "sans-serif",
-          padding: "24px",
-          height: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          textAlign: "center"
-        }}>
+        <div
+          style={{
+            backgroundColor: "#0a0e17",
+            color: "#00f0ff",
+            fontFamily: "sans-serif",
+            padding: "24px",
+            height: "100vh",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            textAlign: "center",
+          }}
+        >
           <h2 style={{ color: "#ff007f", marginBottom: "8px" }}>StreamShield UI Error</h2>
           <p style={{ color: "#94a3b8", fontSize: "14px", maxWidth: "400px" }}>
             {this.state.error?.message || "An unexpected error occurred during rendering."}
@@ -79,7 +109,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
               border: "none",
               borderRadius: "6px",
               fontWeight: "bold",
-              cursor: "pointer"
+              cursor: "pointer",
             }}
           >
             Reload Interface
@@ -93,8 +123,6 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ErrorBoundary>
-      {isWidget ? <DesktopWidget /> : <App />}
-    </ErrorBoundary>
+    <ErrorBoundary>{isWidget ? <DesktopWidget /> : <App />}</ErrorBoundary>
   </React.StrictMode>
 );

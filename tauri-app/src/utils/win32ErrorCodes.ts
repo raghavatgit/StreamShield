@@ -19,3 +19,24 @@ export function resolveWin32Error(errorCode: number): string {
       return `Win32 Error Code: ${errorCode}`;
   }
 }
+
+/**
+ * Normalizes backend errors (including trailing Win32 numeric error codes like "OpenProcess(1234): 5")
+ * into clean user-facing messages.
+ */
+export function formatBackendError(err: unknown): string {
+  const raw = String(err || '').replace(/^Error:\s*/i, '').trim();
+  if (!raw) {
+    return 'An unexpected error occurred.';
+  }
+
+  const codeMatch = raw.match(/(?:[:(]\s*|\berror code\s+)(\d+)\)?$/i);
+  if (codeMatch) {
+    const code = parseInt(codeMatch[1], 10);
+    if (!Number.isNaN(code) && [5, 6, 87, 1400, 1460].includes(code)) {
+      return resolveWin32Error(code);
+    }
+  }
+
+  return raw;
+}

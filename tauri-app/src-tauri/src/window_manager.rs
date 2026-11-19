@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
-use std::collections::HashMap;
 
-// Process-lifetime caches to eliminate repeated GDI extractions and PNG/Base64 encoding churn
+// Process-lifetime caches to eliminate repeated GDI extractions and PNG/Base64 encoding churn.
+// GLOBAL_PID_CACHE stores (creation_time_100ns, exe_name, full_path) and prunes dead PIDs every scan.
 static GLOBAL_ICON_CACHE: Mutex<Option<HashMap<String, Option<String>>>> = Mutex::new(None);
-static GLOBAL_PID_CACHE: Mutex<Option<HashMap<u32, (String, String)>>> = Mutex::new(None);
+static GLOBAL_PID_CACHE: Mutex<Option<HashMap<u32, (u64, String, String)>>> = Mutex::new(None);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WindowInfo {
@@ -16,98 +17,127 @@ pub struct WindowInfo {
     pub icon_base64: Option<String>,
 }
 
+// System processes and capture/recording tools that should never be listed in the app
+#[cfg(windows)]
+const EXCLUDED_PROCESSES: &[&str] = &[
+    "textinputhost.exe",
+    "shellexperiencehost.exe",
+    "startmenuexperiencehost.exe",
+    "searchhost.exe",
+    "searchapp.exe",
+    "systemsettings.exe",
+    "lockapp.exe",
+    "dwm.exe",
+    "csrss.exe",
+    "conhost.exe",
+    "svchost.exe",
+    "streamshield.exe",
+    "taskmgr.exe",
+    "widgets.exe",
+    // Capture, recording and clipping tools that should never be shielded
+    "medal.exe",
+    "medalencoder.exe",
+    "medaloverlay.exe",
+    "obs64.exe",
+    "obs32.exe",
+    "obs.exe",
+    "streamlabs obs.exe",
+    "nvidia share.exe",
+    "nvidia app.exe",
+    "nvidia overlay.exe",
+    "nvspcaps64.exe",
+    "nvcontainer.exe",
+    "nvsphelper64.exe",
+];
+
+#[cfg(windows)]
+unsafe fn is_candidate_window(hwnd: winapi::shared::windef::HWND) -> bool {
+    use winapi::shared::windef::RECT;
+    use winapi::um::dwmapi::{
+        DwmGetWindowAttribute, DWMWA_CLOAKED,
+        DWM_CLOAKED_APP, DWM_CLOAKED_INHERITED, DWM_CLOAKED_SHELL,
+    };
+    use winapi::um::winuser::{
+        GetWindowLongW, GetWindowRect, GetWindowTextLengthW, IsWindowVisible,
+        GWL_EXSTYLE, GWL_STYLE, WS_EX_TOOLWINDOW, WS_VISIBLE,
+    };
+
+    if IsWindowVisible(hwnd) == 0 {
+        return false;
+    }
+
+    if GetWindowTextLengthW(hwnd) == 0 {
+        return false;
+    }
+
+    let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+    if (ex_style & WS_EX_TOOLWINDOW) != 0 {
+        return false;
+    }
+
+    let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+    if (style & WS_VISIBLE) == 0 {
+        return false;
+    }
+
+    let mut rect: RECT = std::mem::zeroed();
+    if GetWindowRect(hwnd, &mut rect) != 0 {
+        let width = rect.right - rect.left;
+        let height = rect.bottom - rect.top;
+        if width <= 0 || height <= 0 {
+            return false;
+        }
+    }
+
+    let mut cloaked: u32 = 0;
+    let hr = DwmGetWindowAttribute(
+        hwnd,
+        DWMWA_CLOAKED,
+        &mut cloaked as *mut _ as *mut _,
+        std::mem::size_of::<u32>() as u32,
+    );
+    if hr == 0 && (cloaked & (DWM_CLOAKED_APP | DWM_CLOAKED_SHELL | DWM_CLOAKED_INHERITED)) != 0 {
+        return false;
+    }
+
+    true
+}
+
+#[cfg(windows)]
+fn resolve_pid_cached(
+    pid_cache: &mut HashMap<u32, (u64, String, String)>,
+    pid: u32,
+) -> (String, String) {
+    let live_ctime = get_process_creation_time(pid);
+    if let Some((cached_ctime, exe, path)) = pid_cache.get(&pid) {
+        if *cached_ctime == live_ctime && !path.is_empty() {
+            return (exe.clone(), path.clone());
+        }
+        // Check matching unknown-time PIDs only if live_ctime is 0 (protected/inaccessible)
+        if *cached_ctime == 0 && live_ctime == 0 {
+            return (exe.clone(), path.clone());
+        }
+    }
+    let (exe, path) = get_process_info(pid);
+    pid_cache.insert(pid, (live_ctime, exe.clone(), path.clone()));
+    (exe, path)
+}
+
 #[cfg(windows)]
 pub fn enumerate_windows(
-    shielded_exes: &std::collections::HashSet<String>,
+    shielded_exes: &HashSet<String>,
     shield_mode: &str,
     auto_reapply: bool,
 ) -> Vec<WindowInfo> {
-    use std::collections::{HashMap, HashSet};
     use winapi::shared::minwindef::{BOOL, LPARAM};
     use winapi::shared::windef::HWND;
-    use winapi::um::winuser::{
-        EnumWindows, GetWindowLongW, GetWindowTextLengthW, GetWindowTextW,
-        GetWindowThreadProcessId, IsWindowVisible, GWL_EXSTYLE, GWL_STYLE,
-        WS_EX_TOOLWINDOW, WS_VISIBLE,
-    };
-    use winapi::um::dwmapi::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWM_CLOAKED_APP, DWM_CLOAKED_SHELL, DWM_CLOAKED_INHERITED};
-
-    // System processes and capture/recording tools that should never be listed in the app
-    const EXCLUDED_PROCESSES: &[&str] = &[
-        "textinputhost.exe",
-        "shellexperiencehost.exe",
-        "startmenuexperiencehost.exe",
-        "searchhost.exe",
-        "searchapp.exe",
-        "systemsettings.exe",
-        "lockapp.exe",
-        "dwm.exe",
-        "csrss.exe",
-        "conhost.exe",
-        "svchost.exe",
-        "streamshield.exe",
-        "taskmgr.exe",
-        // Capture, recording and clipping tools that should never be shielded
-        "medal.exe",
-        "medalencoder.exe",
-        "medaloverlay.exe",
-        "obs64.exe",
-        "obs32.exe",
-        "obs.exe",
-        "streamlabs obs.exe",
-        "nvidia share.exe",
-        "nvcontainer.exe",
-        "nvsphelper64.exe",
-    ];
+    use winapi::um::winuser::{EnumWindows, GetWindowTextW, GetWindowThreadProcessId, IsWindow};
 
     unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        if IsWindowVisible(hwnd) == 0 {
-            return 1;
+        if is_candidate_window(hwnd) {
+            let list = &mut *(lparam as *mut Vec<HWND>);
+            list.push(hwnd);
         }
-
-        // Filter out zero-length window titles
-        if GetWindowTextLengthW(hwnd) == 0 {
-            return 1;
-        }
-
-        // Filter out Tool Windows (floating palettes, tooltip hosts)
-        let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
-        if (ex_style & WS_EX_TOOLWINDOW) != 0 {
-            return 1;
-        }
-
-        // Filter out invisible styles
-        let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
-        if (style & WS_VISIBLE) == 0 {
-            return 1;
-        }
-
-        // Filter out 0x0 or off-screen background helper windows (e.g. background Medal/Discord windows)
-        use winapi::shared::windef::RECT;
-        use winapi::um::winuser::GetWindowRect;
-        let mut rect: RECT = std::mem::zeroed();
-        if GetWindowRect(hwnd, &mut rect) != 0 {
-            let width = rect.right - rect.left;
-            let height = rect.bottom - rect.top;
-            if width <= 0 || height <= 0 {
-                return 1;
-            }
-        }
-
-        // Filter out Cloaked UWP/Windows 10/11 dummy windows
-        let mut cloaked: u32 = 0;
-        let hr = DwmGetWindowAttribute(
-            hwnd,
-            DWMWA_CLOAKED,
-            &mut cloaked as *mut _ as *mut _,
-            std::mem::size_of::<u32>() as u32,
-        );
-        if hr == 0 && (cloaked & (DWM_CLOAKED_APP | DWM_CLOAKED_SHELL | DWM_CLOAKED_INHERITED)) != 0 {
-            return 1;
-        }
-
-        let list = &mut *(lparam as *mut Vec<HWND>);
-        list.push(hwnd);
         1
     }
 
@@ -116,12 +146,13 @@ pub fn enumerate_windows(
 
     let mut results: Vec<WindowInfo> = Vec::new();
     let mut seen_exe: HashSet<String> = HashSet::new();
+    let mut active_pids: HashSet<u32> = HashSet::new();
 
-    let mut icon_cache_guard = GLOBAL_ICON_CACHE.lock().unwrap();
-    let icon_cache = icon_cache_guard.get_or_insert_with(HashMap::new);
-
-    let mut pid_cache_guard = GLOBAL_PID_CACHE.lock().unwrap();
+    let mut pid_cache_guard = GLOBAL_PID_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     let pid_cache = pid_cache_guard.get_or_insert_with(HashMap::new);
+
+    let mut icon_cache_guard = GLOBAL_ICON_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let icon_cache = icon_cache_guard.get_or_insert_with(HashMap::new);
 
     for hwnd in hwnds {
         let mut title_buf = vec![0u16; 512];
@@ -131,18 +162,17 @@ pub fn enumerate_windows(
         if title.is_empty() || title == "Program Manager" { continue; }
 
         let mut pid: u32 = 0;
-        unsafe { GetWindowThreadProcessId(hwnd, &mut pid) };
+        unsafe { GetWindowThreadProcessId(hwnd, &mut pid); }
         if pid == 0 { continue; }
+        active_pids.insert(pid);
 
-        let (exe_name, full_path) = pid_cache.entry(pid).or_insert_with(|| get_process_info(pid)).clone();
+        let (exe_name, full_path) = resolve_pid_cached(pid_cache, pid);
         let exe_lower = exe_name.to_lowercase();
 
-        // Check against system exclusion list
         if EXCLUDED_PROCESSES.contains(&exe_lower.as_str()) {
             continue;
         }
 
-        // Filter ApplicationFrameHost if title is generic
         if exe_lower == "applicationframehost.exe" && (title.is_empty() || title == "ApplicationFrameHost") {
             continue;
         }
@@ -155,15 +185,17 @@ pub fn enumerate_windows(
         // Ground-truth live OS display affinity check
         let mut is_shielded = query_live_affinity(hwnd as usize);
 
-        // AUTO-REAPPLY: If this executable was previously shielded by user config,
-        // but this window instance isn't shielded yet (e.g. freshly launched app),
-        // automatically inject and reapply the shield immediately!
+        // AUTO-REAPPLY: If executable is configured as shielded, ensure window has desired affinity
         if auto_reapply {
-            let should_be_shielded = shielded_exes.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
-            if should_be_shielded && !is_shielded {
-                // Validate HWND is still alive before attempting injection
-                use winapi::um::winuser::IsWindow;
-                if unsafe { IsWindow(hwnd) } != 0 {
+            let should_be_shielded = shielded_exes
+                .iter()
+                .any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
+            if should_be_shielded {
+                let desired = if shield_mode.eq_ignore_ascii_case("monitor") { 0x00000001 } else { 0x00000011 };
+                let current_raw = get_live_affinity_raw(hwnd as usize);
+                if (!is_shielded || (current_raw != desired && current_raw != 0x00000001))
+                    && unsafe { IsWindow(hwnd) } != 0
+                {
                     let _ = crate::injector::set_window_affinity(hwnd as usize, true, Some(shield_mode));
                     is_shielded = query_live_affinity(hwnd as usize);
                 }
@@ -185,6 +217,12 @@ pub fn enumerate_windows(
         });
     }
 
+    // Prevent memory leaks & stale PID-reuse bugs by pruning terminated PIDs and bounding icon cache
+    pid_cache.retain(|pid, _| active_pids.contains(pid));
+    if icon_cache.len() > 128 {
+        icon_cache.retain(|exe, _| seen_exe.contains(exe));
+    }
+
     // Sort: shielded apps first, then alphabetically
     results.sort_by(|a, b| {
         b.is_shielded.cmp(&a.is_shielded)
@@ -194,52 +232,151 @@ pub fn enumerate_windows(
     results
 }
 
-/// Helper for background watchdog to auto-shield freshly opened windows without overhead
+/// Find one visible top-level window per distinct PID matching `target_exe`.
+/// Ensures multi-process apps (Chrome, Edge, VS Code, Discord) have all windows shielded/unshielded.
 #[cfg(windows)]
-pub fn auto_reapply_shields(shielded_exes: &std::collections::HashSet<String>, shield_mode: &str) {
+pub fn find_all_windows_for_exe(target_exe: &str) -> Vec<(usize, u32)> {
+    use winapi::shared::minwindef::{BOOL, LPARAM};
+    use winapi::shared::windef::HWND;
+    use winapi::um::winuser::{EnumWindows, GetWindowThreadProcessId};
+
+    unsafe extern "system" fn collect_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        if is_candidate_window(hwnd) {
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(hwnd, &mut pid);
+            if pid != 0 {
+                let list = &mut *(lparam as *mut Vec<(usize, u32)>);
+                list.push((hwnd as usize, pid));
+            }
+        }
+        1
+    }
+
+    let mut candidates: Vec<(usize, u32)> = Vec::new();
+    unsafe { EnumWindows(Some(collect_proc), &mut candidates as *mut Vec<(usize, u32)> as LPARAM); }
+
+    let norm_target = target_exe.to_lowercase();
+    let mut pid_cache_guard = GLOBAL_PID_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let pid_cache = pid_cache_guard.get_or_insert_with(HashMap::new);
+
+    let mut seen_pids: HashSet<u32> = HashSet::new();
+    let mut matched: Vec<(usize, u32)> = Vec::new();
+
+    for (hwnd, pid) in candidates {
+        if seen_pids.contains(&pid) {
+            continue;
+        }
+        let (exe_name, _) = resolve_pid_cached(pid_cache, pid);
+        let exe_lower = exe_name.to_lowercase();
+        let is_match = exe_lower == norm_target
+            || (norm_target.starts_with("whatsapp") && exe_lower.starts_with("whatsapp"));
+        if is_match {
+            seen_pids.insert(pid);
+            matched.push((hwnd, pid));
+        }
+    }
+
+    matched
+}
+
+/// Background watchdog helper: auto-shields freshly opened windows belonging to shielded executables.
+/// Collects candidate handles cleanly inside `EnumWindows`, then injects outside the callback.
+#[cfg(windows)]
+pub fn auto_reapply_shields(shielded_exes: &HashSet<String>, shield_mode: &str) {
     if shielded_exes.is_empty() {
         return;
     }
     use winapi::shared::minwindef::{BOOL, LPARAM};
     use winapi::shared::windef::HWND;
-    use winapi::um::winuser::{EnumWindows, GetWindowThreadProcessId, IsWindowVisible};
+    use winapi::um::winuser::{EnumWindows, GetWindowThreadProcessId, IsWindow};
 
-    unsafe extern "system" fn watch_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        if IsWindowVisible(hwnd) == 0 { return 1; }
-        let (shielded_set, mode_str) = &*(lparam as *const (std::collections::HashSet<String>, String));
-
-        let mut pid: u32 = 0;
-        GetWindowThreadProcessId(hwnd, &mut pid);
-        if pid == 0 { return 1; }
-
-        let (exe_name, _) = get_process_info(pid);
-        let exe_lower = exe_name.to_lowercase();
-
-        let should_shield = shielded_set.iter().any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
-        if should_shield && !query_live_affinity(hwnd as usize) {
-            if IsWindowVisible(hwnd) != 0 {
-                let _ = crate::injector::set_window_affinity(hwnd as usize, true, Some(mode_str));
+    unsafe extern "system" fn collect_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        if is_candidate_window(hwnd) {
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(hwnd, &mut pid);
+            if pid != 0 {
+                let list = &mut *(lparam as *mut Vec<(usize, u32)>);
+                list.push((hwnd as usize, pid));
             }
         }
-
         1
     }
 
-    let payload = (shielded_exes.clone(), shield_mode.to_string());
-    unsafe {
-        EnumWindows(Some(watch_proc), &payload as *const _ as LPARAM);
+    let mut candidates: Vec<(usize, u32)> = Vec::new();
+    unsafe { EnumWindows(Some(collect_proc), &mut candidates as *mut Vec<(usize, u32)> as LPARAM); }
+
+    let mut targets: Vec<(usize, u32)> = Vec::new();
+    let mut seen_pids: HashSet<u32> = HashSet::new();
+
+    {
+        let mut pid_cache_guard = GLOBAL_PID_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        let pid_cache = pid_cache_guard.get_or_insert_with(HashMap::new);
+
+        for (hwnd, pid) in candidates {
+            if !seen_pids.insert(pid) {
+                continue;
+            }
+            let (exe_name, _) = resolve_pid_cached(pid_cache, pid);
+            let exe_lower = exe_name.to_lowercase();
+            if EXCLUDED_PROCESSES.contains(&exe_lower.as_str()) {
+                continue;
+            }
+            let should_shield = shielded_exes
+                .iter()
+                .any(|s| s.eq_ignore_ascii_case(&exe_name) || s.eq_ignore_ascii_case(&exe_lower));
+            if should_shield && !query_live_affinity(hwnd) {
+                targets.push((hwnd, pid));
+            }
+        }
+    }
+
+    for (hwnd, _pid) in targets {
+        if unsafe { IsWindow(hwnd as _) } != 0 {
+            let _ = crate::injector::set_window_affinity(hwnd, true, Some(shield_mode));
+        }
     }
 }
 
-/// Query the true, ground-truth Display Affinity from Windows OS.
-/// Returns true if ANY non-zero affinity is set (catches both WDA_EXCLUDEFROMCAPTURE
-/// and WDA_MONITOR fallback on older Windows 10 builds).
+/// Query raw OS display affinity flag (0 = None, 1 = Monitor, 0x11 = ExcludeFromCapture).
 #[cfg(windows)]
-fn query_live_affinity(hwnd: usize) -> bool {
+pub fn get_live_affinity_raw(hwnd: usize) -> u32 {
     use winapi::um::winuser::GetWindowDisplayAffinity;
     let mut affinity: u32 = 0;
     let ok = unsafe { GetWindowDisplayAffinity(hwnd as _, &mut affinity) };
-    ok != 0 && affinity != 0
+    if ok != 0 { affinity } else { 0 }
+}
+
+/// Query ground-truth Display Affinity from Windows OS.
+/// Returns true if any non-zero affinity is set.
+#[cfg(windows)]
+pub fn query_live_affinity(hwnd: usize) -> bool {
+    get_live_affinity_raw(hwnd) != 0
+}
+
+#[cfg(windows)]
+fn get_process_creation_time(pid: u32) -> u64 {
+    use winapi::shared::minwindef::FILETIME;
+    use winapi::um::handleapi::CloseHandle;
+    use winapi::um::processthreadsapi::{GetProcessTimes, OpenProcess};
+    use winapi::um::winnt::PROCESS_QUERY_LIMITED_INFORMATION;
+
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return 0;
+        }
+        let mut creation: FILETIME = std::mem::zeroed();
+        let mut exit: FILETIME = std::mem::zeroed();
+        let mut kernel: FILETIME = std::mem::zeroed();
+        let mut user: FILETIME = std::mem::zeroed();
+        let ok = GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user);
+        CloseHandle(handle);
+        if ok != 0 {
+            ((creation.dwHighDateTime as u64) << 32) | (creation.dwLowDateTime as u64)
+        } else {
+            0
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -290,27 +427,23 @@ fn extract_window_or_exe_icon(hwnd: winapi::shared::windef::HWND, exe_path: &str
     unsafe {
         let mut hicon: HICON = null_mut();
 
-        // 1. Try WM_GETICON (ICON_BIG) with 100ms timeout
         let mut result: usize = 0;
         if SendMessageTimeoutW(hwnd, WM_GETICON, ICON_BIG as _, 0, SMTO_ABORTIFHUNG, 100, &mut result as *mut _ as _) != 0 && result != 0 {
             hicon = result as HICON;
         }
 
-        // 2. Try WM_GETICON (ICON_SMALL)
         if hicon.is_null() {
             if SendMessageTimeoutW(hwnd, WM_GETICON, ICON_SMALL as _, 0, SMTO_ABORTIFHUNG, 100, &mut result as *mut _ as _) != 0 && result != 0 {
                 hicon = result as HICON;
             }
         }
 
-        // 3. Try WM_GETICON (ICON_SMALL2)
         if hicon.is_null() {
             if SendMessageTimeoutW(hwnd, WM_GETICON, ICON_SMALL2 as _, 0, SMTO_ABORTIFHUNG, 100, &mut result as *mut _ as _) != 0 && result != 0 {
                 hicon = result as HICON;
             }
         }
 
-        // 4. Try GetClassLongPtrW (GCLP_HICON)
         if hicon.is_null() {
             let class_icon = GetClassLongPtrW(hwnd, GCLP_HICON);
             if class_icon != 0 {
@@ -318,7 +451,6 @@ fn extract_window_or_exe_icon(hwnd: winapi::shared::windef::HWND, exe_path: &str
             }
         }
 
-        // 5. Try GetClassLongPtrW (GCLP_HICONSM)
         if hicon.is_null() {
             let class_icon_sm = GetClassLongPtrW(hwnd, GCLP_HICONSM);
             if class_icon_sm != 0 {
@@ -326,7 +458,6 @@ fn extract_window_or_exe_icon(hwnd: winapi::shared::windef::HWND, exe_path: &str
             }
         }
 
-        // 6. Fallback: ExtractIconExW from the executable file path
         let mut extracted_from_file = false;
         if hicon.is_null() && !exe_path.is_empty() {
             let wide_path: Vec<u16> = OsStr::new(exe_path).encode_wide().chain(std::iter::once(0)).collect();
@@ -450,7 +581,6 @@ unsafe fn hicon_to_base64_png(hicon: winapi::shared::windef::HICON) -> Option<St
         }
     }
 
-    // Encode to PNG bytes using image crate
     let img_buffer = image::RgbaImage::from_raw(width, height, raw_pixels)?;
     let mut png_bytes: Vec<u8> = Vec::new();
     let mut cursor = std::io::Cursor::new(&mut png_bytes);
@@ -463,7 +593,16 @@ unsafe fn hicon_to_base64_png(hicon: winapi::shared::windef::HICON) -> Option<St
 }
 
 #[cfg(not(windows))]
-pub fn enumerate_windows(_shielded_exes: &std::collections::HashSet<String>, _shield_mode: &str, _auto_reapply: bool) -> Vec<WindowInfo> { vec![] }
+pub fn enumerate_windows(_shielded_exes: &HashSet<String>, _shield_mode: &str, _auto_reapply: bool) -> Vec<WindowInfo> { vec![] }
 
 #[cfg(not(windows))]
-pub fn auto_reapply_shields(_shielded_exes: &std::collections::HashSet<String>, _shield_mode: &str) {}
+pub fn find_all_windows_for_exe(_target_exe: &str) -> Vec<(usize, u32)> { vec![] }
+
+#[cfg(not(windows))]
+pub fn auto_reapply_shields(_shielded_exes: &HashSet<String>, _shield_mode: &str) {}
+
+#[cfg(not(windows))]
+pub fn query_live_affinity(_hwnd: usize) -> bool { false }
+
+#[cfg(not(windows))]
+pub fn get_live_affinity_raw(_hwnd: usize) -> u32 { 0 }

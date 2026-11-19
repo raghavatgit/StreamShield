@@ -1,6 +1,6 @@
 //! Capture Compatibility Engine
 //!
-//! Provides capture environment detection (NVIDIA ShadowPlay, OBS Studio, Discord)
+//! Provides capture environment detection (NVIDIA ShadowPlay, OBS Studio, Discord, Medal)
 //! and hardware Multiplane Overlay (MPO) registry management for seamless capture shielding.
 
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,8 @@ pub struct CaptureEnvironment {
     pub obs_detected: bool,
     /// Whether Discord is active
     pub discord_detected: bool,
+    /// Whether Medal.tv is active
+    pub medal_detected: bool,
     /// Whether MPO overlay plane fix is active in registry
     pub mpo_active: bool,
     /// Recommended display affinity mode for current active capture software
@@ -121,6 +123,7 @@ pub fn detect_capture_environment() -> CaptureEnvironment {
         nvidia_detected: nvidia_found,
         obs_detected: obs_found,
         discord_detected: discord_found,
+        medal_detected: medal_found,
         mpo_active,
         recommended_mode,
         summary,
@@ -133,6 +136,7 @@ pub fn detect_capture_environment() -> CaptureEnvironment {
         nvidia_detected: false,
         obs_detected: false,
         discord_detected: false,
+        medal_detected: false,
         mpo_active: false,
         recommended_mode: "exclude".to_string(),
         summary: "Non-Windows platform".to_string(),
@@ -184,7 +188,7 @@ pub fn set_mpo_fix_registry(enable: bool) -> Result<(), String> {
             );
             RegCloseKey(hkey);
 
-            // Set DisableOverlays = 1 in GraphicsDrivers (Win 11 25H2+)
+            // Set DisableOverlays = 1 in GraphicsDrivers (Win 11 24H2/25H2+)
             let mut gfx_key = std::ptr::null_mut();
             let gfx_status = RegCreateKeyExW(
                 HKEY_LOCAL_MACHINE, gfx_subkey.as_ptr(), 0, std::ptr::null_mut(),
@@ -199,14 +203,12 @@ pub fn set_mpo_fix_registry(enable: bool) -> Result<(), String> {
                 RegCloseKey(gfx_key);
             }
         } else {
-            // Remove OverlayTestMode from DWM
             let mut hkey = std::ptr::null_mut();
             if RegOpenKeyExW(HKEY_LOCAL_MACHINE, dwm_subkey.as_ptr(), 0, KEY_SET_VALUE, &mut hkey) == 0 {
                 let _ = RegDeleteValueW(hkey, dwm_val.as_ptr());
                 RegCloseKey(hkey);
             }
 
-            // Remove DisableOverlays from GraphicsDrivers
             let mut gfx_key = std::ptr::null_mut();
             if RegOpenKeyExW(HKEY_LOCAL_MACHINE, gfx_subkey.as_ptr(), 0, KEY_SET_VALUE, &mut gfx_key) == 0 {
                 let _ = RegDeleteValueW(gfx_key, gfx_val.as_ptr());
@@ -223,9 +225,8 @@ pub fn set_mpo_fix_registry(_enable: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Check if the MPO fix is currently active in the registry.
 #[cfg(windows)]
-pub fn is_mpo_fix_active() -> bool {
+fn read_hklm_dword(subkey: &str, value_name: &str) -> Option<u32> {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use winapi::um::winnt::KEY_QUERY_VALUE;
@@ -235,35 +236,36 @@ pub fn is_mpo_fix_active() -> bool {
         OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
     }
 
-    let subkey = wide(r"SOFTWARE\Microsoft\Windows\Dwm");
-    let val_name = wide("OverlayTestMode");
+    let subkey_w = wide(subkey);
+    let val_w = wide(value_name);
 
     unsafe {
         let mut hkey = std::ptr::null_mut();
-        if RegOpenKeyExW(
-            HKEY_LOCAL_MACHINE,
-            subkey.as_ptr(),
-            0,
-            KEY_QUERY_VALUE,
-            &mut hkey,
-        ) != 0
-        {
-            return false;
+        if RegOpenKeyExW(HKEY_LOCAL_MACHINE, subkey_w.as_ptr(), 0, KEY_QUERY_VALUE, &mut hkey) != 0 {
+            return None;
         }
         let mut data_type = 0u32;
         let mut data: u32 = 0;
         let mut data_len = std::mem::size_of::<u32>() as u32;
         let query_res = RegQueryValueExW(
             hkey,
-            val_name.as_ptr(),
+            val_w.as_ptr(),
             std::ptr::null_mut(),
             &mut data_type,
             &mut data as *mut u32 as *mut _,
             &mut data_len,
         );
         RegCloseKey(hkey);
-        query_res == 0 && data == 5
+        if query_res == 0 { Some(data) } else { None }
     }
+}
+
+/// Check if the MPO fix is currently active in the registry (checks both Win10 DWM & Win11 GraphicsDrivers).
+#[cfg(windows)]
+pub fn is_mpo_fix_active() -> bool {
+    let dwm_ok = read_hklm_dword(r"SOFTWARE\Microsoft\Windows\Dwm", "OverlayTestMode") == Some(5);
+    let gfx_ok = read_hklm_dword(r"SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "DisableOverlays") == Some(1);
+    dwm_ok || gfx_ok
 }
 
 #[cfg(not(windows))]

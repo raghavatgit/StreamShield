@@ -32,12 +32,22 @@ export interface AppSettings {
   widget_style: "pill" | "dock" | "badge";
   widget_always_on_top: boolean;
   widget_stealth: boolean;
+  widget_x?: number | null;
+  widget_y?: number | null;
+}
+
+export interface OsInfo {
+  build: number;
+  is_win11: boolean;
+  supports_exclude_from_capture: boolean;
+  display_name: string;
 }
 
 export interface CaptureEnvironment {
   nvidia_detected: boolean;
   obs_detected: boolean;
   discord_detected: boolean;
+  medal_detected: boolean;
   mpo_active: boolean;
   recommended_mode: string;
   summary: string;
@@ -63,6 +73,7 @@ interface Props {
   shieldedCount: number;
   totalWindows: number;
   isAdmin: boolean;
+  osInfo?: OsInfo | null;
 }
 
 export default function SettingsModal({
@@ -75,12 +86,15 @@ export default function SettingsModal({
   shieldedCount,
   totalWindows,
   isAdmin,
+  osInfo: propOsInfo,
 }: Props) {
   const [activeTab, setActiveTab] = useState<"system" | "shield" | "performance" | "ui" | "maintenance">("system");
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [captureEnv, setCaptureEnv] = useState<CaptureEnvironment | null>(null);
+  const [localOsInfo, setLocalOsInfo] = useState<OsInfo | null>(propOsInfo ?? null);
+  const osInfo = propOsInfo ?? localOsInfo;
 
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateResult, setUpdateResult] = useState<string | null>(null);
@@ -105,14 +119,19 @@ export default function SettingsModal({
     }
   };
 
-  // Load capture environment diagnostics when modal opens
+  // Load capture environment & OS diagnostics once when modal opens
   useEffect(() => {
     if (isOpen) {
       invoke<CaptureEnvironment>("get_capture_environment")
         .then((env) => setCaptureEnv(env))
         .catch((err) => console.error("Failed to detect capture environment:", err));
+      if (!propOsInfo) {
+        invoke<OsInfo>("get_os_info")
+          .then((info) => setLocalOsInfo(info))
+          .catch(() => {});
+      }
     }
-  }, [isOpen, activeTab]);
+  }, [isOpen, propOsInfo]);
 
   // Close on Escape
   useEffect(() => {
@@ -291,7 +310,7 @@ export default function SettingsModal({
             <div className="settings-section-pane">
               {/* Capture Environment Status Badge */}
               {captureEnv && (
-                <div className={`capture-env-banner ${captureEnv.nvidia_detected ? "nvidia-active" : "standard"}`}>
+                <div className={`capture-env-banner ${captureEnv.nvidia_detected || captureEnv.medal_detected ? "nvidia-active" : "standard"}`}>
                   <div className="capture-env-icon-box">
                     <IconShield size={16} />
                   </div>
@@ -299,12 +318,23 @@ export default function SettingsModal({
                     <div className="capture-env-title">
                       {captureEnv.nvidia_detected
                         ? "NVIDIA Capture Detected"
+                        : captureEnv.medal_detected
+                        ? "Medal.tv Capture Detected"
                         : captureEnv.obs_detected || captureEnv.discord_detected
                         ? "OBS Studio / Discord Active"
                         : "Standard Capture Environment"}
                     </div>
                     <div className="capture-env-desc">{captureEnv.summary}</div>
                   </div>
+                </div>
+              )}
+
+              {osInfo && osInfo.build > 0 && !osInfo.supports_exclude_from_capture && (
+                <div className="settings-callout-box info">
+                  <IconInfo size={16} className="callout-svg" />
+                  <span className="callout-text">
+                    {osInfo.display_name} detected. Transparent exclusion requires Windows 10 v2004 (Build 19041+); StreamShield automatically uses Black Screen Mask fallback.
+                  </span>
                 </div>
               )}
 
@@ -376,7 +406,7 @@ export default function SettingsModal({
                     )}
                   </div>
                   <span className="setting-subtext">
-                    Disables hardware MPO overlay planes in Windows DWM to ensure GPU-accelerated capture engines (ShadowPlay, OBS Game Capture) never bypass window privacy masks
+                    Disables hardware MPO overlay planes in Windows DWM so GPU-accelerated capture engines (ShadowPlay, OBS Game Capture) never bypass window privacy masks (requires Windows reboot to take effect)
                   </span>
                 </div>
                 <label className="toggle-control">
@@ -689,6 +719,12 @@ export default function SettingsModal({
                 <div className="diag-row">
                   <span className="diag-key">Version:</span>
                   <span className="diag-val">v{CURRENT_VERSION}</span>
+                </div>
+                <div className="diag-row">
+                  <span className="diag-key">Windows OS:</span>
+                  <span className="diag-val">
+                    {osInfo ? `${osInfo.display_name} (${osInfo.supports_exclude_from_capture ? "Full Exclude" : "Monitor Fallback"})` : "Detecting..."}
+                  </span>
                 </div>
                 <div className="diag-row">
                   <span className="diag-key">Privileges:</span>

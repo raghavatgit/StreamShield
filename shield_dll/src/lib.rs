@@ -41,20 +41,22 @@ mod imp {
     /// On success, forces a DWM cache invalidation pass using `SWP_FRAMECHANGED`
     /// and `RDW_UPDATENOW` to guarantee real-time feed updates without window resize.
     unsafe fn apply_affinity_to_hwnd(hwnd: HWND, affinity: u32, enable: bool) -> u32 {
-        // Check current affinity first - skip if already at desired value
         let mut current: u32 = 0;
         if GetWindowDisplayAffinity(hwnd, &mut current) != 0 {
-            if enable && current != 0 {
-                return 1; // Already shielded, nothing to do
-            }
-            if !enable && current == 0 {
-                return 1; // Already unshielded, nothing to do
+            if current == affinity {
+                return 1; // Already at exact desired affinity
             }
         }
 
         let mut res = SetWindowDisplayAffinity(hwnd, affinity);
-        if res == 0 && enable {
-            res = SetWindowDisplayAffinity(hwnd, WDA_MONITOR);
+        if res == 0 && enable && affinity != WDA_MONITOR {
+            // On older Windows 10 builds (< 2004 / 19041) or direct mode transition,
+            // reset to WDA_NONE first or fall back to WDA_MONITOR.
+            let _ = SetWindowDisplayAffinity(hwnd, WDA_NONE);
+            res = SetWindowDisplayAffinity(hwnd, affinity);
+            if res == 0 {
+                res = SetWindowDisplayAffinity(hwnd, WDA_MONITOR);
+            }
         }
 
         // Only force-redraw if SetWindowDisplayAffinity succeeded (affinity actually changed)

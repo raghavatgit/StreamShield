@@ -1,5 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap");
-
 *,
 *::before,
 *::after {
@@ -9,25 +7,81 @@
   user-select: none;
 }
 
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 /* ==========================================================================
-   THEME PALETTES (3 CURATED PRESETS: CYBERPUNK, DISCORD DARK, NEUMORPHIC WHITE)
+   THEME PALETTES & SEMANTIC TOKENS
    ========================================================================== */
 
 :root,
+[data-theme="violet"] {
+  --bg-base: #07090e;
+  --bg-app: #07090e;
+  --bg-surface: #0d121c;
+  --bg-secondary: rgba(13, 18, 28, 0.92);
+  --bg-card: rgba(16, 23, 38, 0.75);
+  --bg-card-hover: rgba(24, 35, 58, 0.9);
+  --bg-card-shielded: rgba(168, 85, 247, 0.12);
+  --bg-card-active: rgba(168, 85, 247, 0.14);
+  --bg-accent-subtle: rgba(168, 85, 247, 0.16);
+  --surface-subtle: rgba(255, 255, 255, 0.05);
+  --surface-hover: rgba(255, 255, 255, 0.1);
+  --border-subtle: rgba(168, 85, 247, 0.12);
+  --border-card: rgba(168, 85, 247, 0.2);
+  --border-active: rgba(168, 85, 247, 0.6);
+  --border-accent: rgba(168, 85, 247, 0.55);
+  --border-hover: rgba(168, 85, 247, 0.42);
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #62728d;
+  --primary: #a855f7;
+  --accent: #ec4899;
+  --accent-color: #a855f7;
+  --on-primary: #ffffff;
+  --brand-gradient: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+  --toggle-rail-off: #172236;
+  --toggle-rail-on: #a855f7;
+  --toggle-knob: #ffffff;
+  --glow-accent: rgba(168, 85, 247, 0.35);
+  --ambient-glow-1: rgba(168, 85, 247, 0.22);
+  --ambient-glow-2: rgba(236, 72, 153, 0.16);
+  --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --inset-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+  --widget-bg: rgba(13, 19, 34, 0.92);
+  --widget-popover-bg: rgba(13, 19, 34, 0.97);
+  --widget-border: rgba(168, 85, 247, 0.5);
+  --widget-shadow: 0 8px 24px rgba(0, 0, 0, 0.65), 0 0 14px rgba(168, 85, 247, 0.28);
+  --widget-tile-bg: rgba(255, 255, 255, 0.06);
+  --widget-tile-hover: rgba(255, 255, 255, 0.14);
+  --widget-tile-shielded: rgba(168, 85, 247, 0.18);
+  --widget-divider: rgba(255, 255, 255, 0.12);
+}
+
 [data-theme="cyberpunk"] {
   --bg-base: #07090e;
+  --bg-app: #07090e;
   --bg-surface: #0d121c;
+  --bg-secondary: rgba(13, 18, 28, 0.92);
   --bg-card: rgba(16, 23, 38, 0.75);
   --bg-card-hover: rgba(24, 35, 58, 0.9);
   --bg-card-shielded: rgba(0, 240, 255, 0.09);
+  --bg-card-active: rgba(0, 240, 255, 0.14);
+  --bg-accent-subtle: rgba(0, 240, 255, 0.16);
   --border-subtle: rgba(0, 240, 255, 0.1);
   --border-card: rgba(0, 240, 255, 0.16);
   --border-active: rgba(0, 240, 255, 0.5);
+  --border-accent: rgba(0, 240, 255, 0.55);
+  --border-hover: rgba(0, 240, 255, 0.42);
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #62728d;
   --primary: #00f0ff;
   --accent: #ff007f;
+  --accent-color: #00f0ff;
+  --on-primary: #061018;
   --brand-gradient: linear-gradient(135deg, #00f0ff 0%, #ff007f 100%);
   --toggle-rail-off: #172236;
   --toggle-rail-on: #00f0ff;
@@ -41,18 +95,26 @@
 
 [data-theme="discord"] {
   --bg-base: #111214;
+  --bg-app: #111214;
   --bg-surface: #1e1f22;
+  --bg-secondary: rgba(30, 31, 34, 0.94);
   --bg-card: #2b2d31;
   --bg-card-hover: #313338;
   --bg-card-shielded: rgba(35, 165, 90, 0.1);
+  --bg-card-active: rgba(88, 101, 242, 0.16);
+  --bg-accent-subtle: rgba(88, 101, 242, 0.16);
   --border-subtle: rgba(255, 255, 255, 0.06);
   --border-card: rgba(255, 255, 255, 0.08);
   --border-active: rgba(35, 165, 90, 0.55);
+  --border-accent: rgba(88, 101, 242, 0.55);
+  --border-hover: rgba(88, 101, 242, 0.42);
   --text-primary: #f2f3f5;
   --text-secondary: #949ba4;
   --text-muted: #6d6f78;
   --primary: #23a55a;
   --accent: #5865f2;
+  --accent-color: #5865f2;
+  --on-primary: #ffffff;
   --brand-gradient: linear-gradient(135deg, #5865f2 0%, #23a55a 100%);
   --toggle-rail-off: #383a40;
   --toggle-rail-on: #23a55a;
@@ -66,18 +128,28 @@
 
 [data-theme="neumorphic-white"] {
   --bg-base: #f1f5f9;
+  --bg-app: #f1f5f9;
   --bg-surface: #ffffff;
+  --bg-secondary: #f8fafc;
   --bg-card: #ffffff;
   --bg-card-hover: #f8fafc;
   --bg-card-shielded: #eef2ff;
+  --bg-card-active: rgba(79, 70, 229, 0.12);
+  --bg-accent-subtle: rgba(79, 70, 229, 0.12);
+  --surface-subtle: rgba(15, 23, 42, 0.04);
+  --surface-hover: rgba(15, 23, 42, 0.08);
   --border-subtle: #e2e8f0;
   --border-card: #cbd5e1;
   --border-active: #4f46e5;
+  --border-accent: rgba(79, 70, 229, 0.55);
+  --border-hover: #94a3b8;
   --text-primary: #0f172a;
   --text-secondary: #334155;
   --text-muted: #64748b;
   --primary: #4f46e5;
   --accent: #0284c7;
+  --accent-color: #4f46e5;
+  --on-primary: #ffffff;
   --brand-gradient: linear-gradient(135deg, #4f46e5 0%, #0284c7 100%);
   --toggle-rail-off: #cbd5e1;
   --toggle-rail-on: #4f46e5;
@@ -87,6 +159,14 @@
   --ambient-glow-2: rgba(2, 132, 199, 0.08);
   --card-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
   --inset-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06);
+  --widget-bg: rgba(255, 255, 255, 0.94);
+  --widget-popover-bg: rgba(255, 255, 255, 0.98);
+  --widget-border: rgba(79, 70, 229, 0.45);
+  --widget-shadow: 0 8px 24px rgba(15, 23, 42, 0.16), 0 0 12px rgba(79, 70, 229, 0.18);
+  --widget-tile-bg: rgba(15, 23, 42, 0.05);
+  --widget-tile-hover: rgba(15, 23, 42, 0.11);
+  --widget-tile-shielded: rgba(79, 70, 229, 0.14);
+  --widget-divider: rgba(15, 23, 42, 0.12);
 }
 
 /* ==========================================================================
@@ -99,7 +179,7 @@ body,
   height: 100%;
   width: 100%;
   overflow: hidden;
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
   background-color: var(--bg-base);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
@@ -117,6 +197,10 @@ body,
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
   box-sizing: border-box;
+}
+
+html[data-os="win10"] .streamshield-root {
+  border-radius: 0;
 }
 
 .streamshield-root.is-maximized {
@@ -671,7 +755,7 @@ input,
 
 .tab-count {
   font-size: 10.5px;
-  font-family: "JetBrains Mono", monospace;
+  font-family: "Cascadia Mono", "Consolas", monospace;
   opacity: 0.8;
 }
 
@@ -779,7 +863,7 @@ input,
 .fallback-letter {
   font-size: 14px;
   font-weight: 800;
-  font-family: "JetBrains Mono", monospace;
+  font-family: "Cascadia Mono", "Consolas", monospace;
 }
 
 /* App Metadata */
@@ -809,7 +893,7 @@ input,
 .pid-tag {
   font-size: 9.5px;
   font-weight: 600;
-  font-family: "JetBrains Mono", monospace;
+  font-family: "Cascadia Mono", "Consolas", monospace;
   color: var(--text-muted);
   background: var(--bg-surface);
   padding: 1px 5px;
@@ -826,7 +910,7 @@ input,
   border-radius: 4px;
   border: 1px solid var(--border-active);
   letter-spacing: 0.4px;
-  font-family: "JetBrains Mono", monospace;
+  font-family: "Cascadia Mono", "Consolas", monospace;
   box-shadow: 0 0 6px var(--glow-accent);
 }
 
@@ -861,7 +945,7 @@ input,
   color: var(--text-muted);
   font-size: 10.5px;
   font-weight: 600;
-  font-family: "JetBrains Mono", monospace;
+  font-family: "Cascadia Mono", "Consolas", monospace;
   cursor: pointer;
   box-shadow: var(--card-shadow);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1218,30 +1302,58 @@ input,
   color: #b45309;
 }
 
-/* ==========================================================================
-   SETTINGS BUTTON & COMPACT MODE
-   ========================================================================== */
+[data-theme="neumorphic-white"] .header-app-wordmark {
+  filter: invert(1) hue-rotate(180deg) contrast(1.18) drop-shadow(0 1px 1px rgba(15, 23, 42, 0.08));
+}
 
-.settings-gear-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-card);
+[data-theme="neumorphic-white"] .compact-app-tile {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+[data-theme="neumorphic-white"] .compact-app-tile:hover {
+  background: rgba(15, 23, 42, 0.08);
+}
+
+[data-theme="neumorphic-white"] .compact-master-rail {
+  background: #e2e8f0;
+}
+
+[data-theme="neumorphic-white"] .mode-tag {
+  background: rgba(15, 23, 42, 0.07);
+}
+
+[data-theme="neumorphic-white"] .diag-update-btn {
+  background: rgba(15, 23, 42, 0.05);
+}
+
+[data-theme="neumorphic-white"] .diag-update-btn:hover {
+  background: rgba(15, 23, 42, 0.1);
+}
+
+[data-theme="neumorphic-white"] .update-view-btn {
+  background: rgba(15, 23, 42, 0.06);
   color: var(--text-primary);
-  font-size: 15px;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  border-color: var(--border-card);
 }
 
-.settings-gear-btn:hover {
-  border-color: var(--border-active);
-  box-shadow: 0 0 12px var(--glow-accent);
-  transform: rotate(30deg) scale(1.05);
+[data-theme="neumorphic-white"] .widget-style-preview {
+  background: #eef2f7;
+  border-color: var(--border-card);
 }
+
+[data-theme="neumorphic-white"] .mini-icon,
+[data-theme="neumorphic-white"] .dock-dot {
+  background: rgba(15, 23, 42, 0.25);
+}
+
+[data-theme="neumorphic-white"] .settings-close-cross:hover,
+[data-theme="neumorphic-white"] .settings-nav-btn:hover {
+  background: rgba(15, 23, 42, 0.06);
+}
+
+/* ==========================================================================
+   COMPACT MODE ROWS
+   ========================================================================== */
 
 .app-card.is-compact {
   padding: 6px 12px;
@@ -1527,7 +1639,7 @@ input,
 
 .shield-mode-card.is-selected {
   border-color: var(--primary);
-  background: rgba(0, 240, 255, 0.04);
+  background: var(--bg-accent-subtle);
   box-shadow: 0 0 14px var(--glow-accent);
 }
 
@@ -1544,13 +1656,13 @@ input,
   letter-spacing: 0.05em;
   padding: 2px 6px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-subtle);
   color: var(--text-secondary);
 }
 
 .shield-mode-card.is-selected .mode-tag {
   background: var(--primary);
-  color: var(--bg-app);
+  color: var(--on-primary);
 }
 
 .mode-check {
@@ -1880,9 +1992,10 @@ input,
 /* Diagnostics Footer */
 .app-diagnostics-footer {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 12px 14px;
   background: var(--bg-surface);
   border: 1px solid var(--border-card);
   border-radius: 8px;
@@ -1891,7 +2004,8 @@ input,
 .diag-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 11px;
 }
 
@@ -2371,8 +2485,15 @@ input,
 
 .compact-mode-action-btn:hover,
 .compact-window-btn.btn-min:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface-hover);
   color: var(--text-primary);
+}
+
+.compact-mode-action-btn.is-active {
+  color: var(--primary);
+  background: var(--bg-accent-subtle);
+  border: 1px solid var(--border-accent);
+  box-shadow: 0 0 8px var(--glow-accent);
 }
 
 .compact-window-btn.btn-close:hover {
@@ -2488,11 +2609,45 @@ input,
   width: 100%;
 }
 
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
 .compact-skeleton-tile {
   aspect-ratio: 1;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  animation: pulse 1.5s infinite;
+  background: var(--surface-subtle);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.settings-subsection-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 0;
+}
+
+.settings-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.settings-group-icon {
+  color: var(--primary);
 }
 
 /* ==========================================================================
@@ -2706,33 +2861,74 @@ body.is-widget-window #root {
   width: 100%;
   height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   cursor: grab;
   user-select: none;
+  position: relative;
 }
 
 .desktop-widget-root:active {
   cursor: grabbing;
 }
 
+.widget-drag-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  opacity: 0.72;
+  cursor: grab;
+  padding: 2px 1px;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.widget-drag-grip:hover {
+  opacity: 1;
+  color: var(--text-primary);
+}
+
+.widget-inline-error {
+  margin-top: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.92);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 600;
+  max-width: 92%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+.is-busy {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 /* ── 1. DYNAMIC PILL / ISLAND MODE ── */
 .desktop-widget-root.pill-mode {
-  padding: 3px 6px;
+  padding: 6px 8px;
 }
 
 .widget-pill-container {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   padding: 4px 8px;
-  background: rgba(15, 23, 42, 0.88);
-  border: 1px solid var(--border-accent, rgba(0, 240, 255, 0.45));
+  background: var(--widget-bg);
+  border: 1px solid var(--widget-border);
   border-radius: 9999px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.65), 0 0 12px var(--glow-accent, rgba(0, 240, 255, 0.3));
+  box-shadow: var(--widget-shadow);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  height: 38px;
+  height: 40px;
+  max-width: 100%;
   box-sizing: border-box;
 }
 
@@ -2741,7 +2937,7 @@ body.is-widget-window #root {
   align-items: center;
   gap: 5px;
   cursor: pointer;
-  padding: 2px 4px;
+  padding: 2px 5px;
   border-radius: 9999px;
   background: transparent;
   border: none;
@@ -2750,7 +2946,7 @@ body.is-widget-window #root {
 }
 
 .pill-brand-badge:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface-hover);
 }
 
 .widget-pill-logo {
@@ -2763,23 +2959,23 @@ body.is-widget-window #root {
 .pill-counter-tag {
   font-size: 10px;
   font-weight: 800;
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--text-secondary, #94a3b8);
+  background: var(--widget-tile-bg);
+  color: var(--text-secondary);
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
   transition: all 0.2s ease;
 }
 
 .pill-counter-tag.all-safe {
-  background: rgba(16, 185, 129, 0.25);
+  background: rgba(16, 185, 129, 0.22);
   color: #10b981;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.35);
 }
 
 .pill-counter-tag.partial {
-  background: rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.22);
   color: #f59e0b;
 }
 
@@ -2789,13 +2985,20 @@ body.is-widget-window #root {
   gap: 4px;
 }
 
+.pill-empty-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+
 .pill-mini-app-tile {
   position: relative;
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--widget-tile-bg);
+  border: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2805,15 +3008,15 @@ body.is-widget-window #root {
 }
 
 .pill-mini-app-tile:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--widget-tile-hover);
   transform: scale(1.1);
-  border-color: rgba(255, 255, 255, 0.3);
+  border-color: var(--border-hover);
 }
 
 .pill-mini-app-tile.is-shielded {
-  border-color: var(--accent-color, #00f0ff);
-  background: rgba(0, 240, 255, 0.14);
-  box-shadow: 0 0 6px var(--glow-accent, rgba(0, 240, 255, 0.3));
+  border-color: var(--primary);
+  background: var(--widget-tile-shielded);
+  box-shadow: 0 0 6px var(--glow-accent);
 }
 
 .pill-app-icon {
@@ -2839,11 +3042,31 @@ body.is-widget-window #root {
   box-shadow: 0 0 4px var(--toggle-rail-on, #10b981);
 }
 
+.pill-overflow-badge {
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--widget-tile-bg);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pill-overflow-badge:hover {
+  background: var(--widget-tile-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+
 .pill-action-cluster {
   display: flex;
   align-items: center;
   gap: 4px;
-  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  border-left: 1px solid var(--widget-divider);
   padding-left: 6px;
 }
 
@@ -2869,47 +3092,48 @@ body.is-widget-window #root {
 .pill-eye-btn:hover,
 .pill-window-btn:hover,
 .pill-close-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--surface-hover);
   color: var(--text-primary);
   transform: scale(1.08);
 }
 
 .pill-master-btn.is-active {
-  background: rgba(16, 185, 129, 0.25);
+  background: rgba(16, 185, 129, 0.22);
   border-color: rgba(16, 185, 129, 0.5);
   color: #10b981;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.35);
 }
 
 .pill-master-btn.is-partial {
-  background: rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.22);
   border-color: rgba(245, 158, 11, 0.5);
   color: #f59e0b;
 }
 
 .pill-eye-btn.is-stealth {
-  background: rgba(16, 185, 129, 0.25);
-  border-color: rgba(16, 185, 129, 0.5);
-  color: #10b981;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+  background: var(--bg-accent-subtle);
+  border-color: var(--border-accent);
+  color: var(--primary);
+  box-shadow: 0 0 6px var(--glow-accent);
 }
 
 .pill-close-btn:hover {
-  background: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.22);
   color: #ef4444;
 }
 
 /* ── 2. FLOATING COMPACT DOCK MODE ── */
 .desktop-widget-root.dock-mode {
-  padding: 4px;
+  padding: 8px;
 }
 
 .widget-dock-container {
   width: 100%;
-  background: rgba(15, 23, 42, 0.92);
-  border: 1px solid var(--border-accent, rgba(0, 240, 255, 0.45));
+  max-height: 100%;
+  background: var(--widget-bg);
+  border: 1px solid var(--widget-border);
   border-radius: 14px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.7), 0 0 14px var(--glow-accent, rgba(0, 240, 255, 0.3));
+  box-shadow: var(--widget-shadow);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   padding: 8px;
@@ -2923,8 +3147,14 @@ body.is-widget-window #root {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--widget-divider);
   padding-bottom: 6px;
+}
+
+.dock-header-drag-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .dock-header-left {
@@ -2935,7 +3165,13 @@ body.is-widget-window #root {
   background: transparent;
   border: none;
   font-family: inherit;
-  padding: 0;
+  padding: 2px 4px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.dock-header-left:hover {
+  background: var(--surface-hover);
 }
 
 .widget-dock-logo {
@@ -2961,8 +3197,8 @@ body.is-widget-window #root {
   background: transparent;
   border: 1px solid transparent;
   border-radius: 5px;
-  width: 20px;
-  height: 20px;
+  width: 21px;
+  height: 21px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2973,33 +3209,63 @@ body.is-widget-window #root {
 }
 
 .dock-tool-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface-hover);
   color: var(--text-primary);
 }
 
-.dock-tool-btn.is-active,
-.dock-tool-btn.is-stealth {
+.dock-tool-btn.is-active {
   color: #10b981;
   background: rgba(16, 185, 129, 0.2);
 }
 
+.dock-tool-btn.is-partial {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.2);
+}
+
+.dock-tool-btn.is-stealth {
+  color: var(--primary);
+  background: var(--bg-accent-subtle);
+}
+
 .dock-tool-btn.close:hover {
-  background: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.22);
   color: #ef4444;
 }
 
 .widget-dock-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 5px;
+  gap: 6px;
+  max-height: 164px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 2px 2px 0;
+}
+
+.widget-dock-grid::-webkit-scrollbar {
+  width: 4px;
+}
+
+.widget-dock-grid::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 4px;
+}
+
+.dock-empty-state {
+  padding: 28px 12px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .dock-app-tile {
   position: relative;
   aspect-ratio: 1;
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--widget-tile-bg);
+  border: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3009,15 +3275,15 @@ body.is-widget-window #root {
 }
 
 .dock-app-tile:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--widget-tile-hover);
   transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.25);
+  border-color: var(--border-hover);
 }
 
 .dock-app-tile.is-shielded {
-  border-color: var(--accent-color, #00f0ff);
-  background: rgba(0, 240, 255, 0.15);
-  box-shadow: 0 0 8px var(--glow-accent, rgba(0, 240, 255, 0.35));
+  border-color: var(--primary);
+  background: var(--widget-tile-shielded);
+  box-shadow: 0 0 8px var(--glow-accent);
 }
 
 .dock-app-icon {
@@ -3040,14 +3306,14 @@ body.is-widget-window #root {
   height: 12px;
   border-radius: 50%;
   background: var(--toggle-rail-on, #10b981);
-  color: #042f2e;
+  color: var(--on-primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 5px #10b981;
+  box-shadow: 0 0 5px var(--glow-accent);
 }
 
-/* ── 3. CORNER STATUS BADGE MODE ── */
+/* ── 3. CORNER STATUS BADGE MODE (ANCHOR-PRESERVING EXPANSION) ── */
 .desktop-widget-root.badge-mode {
   position: relative;
   width: 100%;
@@ -3056,17 +3322,33 @@ body.is-widget-window #root {
   flex-direction: column-reverse;
   align-items: flex-end;
   justify-content: flex-start;
-  padding: 8px;
+  padding: 12px;
   box-sizing: border-box;
 }
 
+.desktop-widget-root.badge-mode.expand-up {
+  flex-direction: column-reverse;
+}
+
+.desktop-widget-root.badge-mode.expand-down {
+  flex-direction: column;
+}
+
+.desktop-widget-root.badge-mode.expand-left {
+  align-items: flex-end;
+}
+
+.desktop-widget-root.badge-mode.expand-right {
+  align-items: flex-start;
+}
+
 .widget-badge-circle {
-  width: 46px;
-  height: 46px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  background: rgba(15, 23, 42, 0.92);
-  border: 1.5px solid var(--border-accent, rgba(0, 240, 255, 0.5));
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.7), 0 0 12px var(--glow-accent, rgba(0, 240, 255, 0.4));
+  background: var(--widget-bg);
+  border: 1.5px solid var(--widget-border);
+  box-shadow: var(--widget-shadow);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   display: flex;
@@ -3075,63 +3357,73 @@ body.is-widget-window #root {
   cursor: pointer;
   position: relative;
   flex-shrink: 0;
-  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  font-family: inherit;
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .widget-badge-circle:hover {
-  transform: scale(1.08);
-  border-color: var(--accent-color);
-  box-shadow: 0 4px 22px rgba(0, 0, 0, 0.8), 0 0 18px var(--glow-accent);
+  transform: scale(1.06);
+  border-color: var(--primary);
 }
 
 .widget-badge-circle.is-all {
   border-color: #10b981;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.7), 0 0 14px rgba(16, 185, 129, 0.5);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45), 0 0 14px rgba(16, 185, 129, 0.45);
 }
 
 .widget-badge-circle.is-partial {
   border-color: #f59e0b;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.7), 0 0 14px rgba(245, 158, 11, 0.5);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45), 0 0 14px rgba(245, 158, 11, 0.45);
 }
 
 .widget-badge-logo {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   object-fit: contain;
   filter: drop-shadow(0 0 6px var(--glow-accent));
+  pointer-events: none;
 }
 
 .badge-count-pill {
   position: absolute;
   top: -2px;
   right: -2px;
-  background: var(--accent-color, #00f0ff);
-  color: #03131e;
-  font-size: 9px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 9.5px;
   font-weight: 800;
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid #0f172a;
+  border: 1.5px solid var(--bg-surface);
   box-shadow: 0 0 6px var(--glow-accent);
+  pointer-events: none;
 }
 
 .badge-quick-popover {
-  margin-bottom: 8px;
-  background: rgba(15, 23, 42, 0.96);
-  border: 1px solid var(--border-accent, rgba(0, 240, 255, 0.45));
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8), 0 0 14px var(--glow-accent);
+  background: var(--widget-popover-bg);
+  border: 1px solid var(--widget-border);
+  border-radius: 12px;
+  box-shadow: var(--widget-shadow);
   padding: 6px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  width: 140px;
+  gap: 3px;
+  width: 162px;
   backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   z-index: 999;
+}
+
+.desktop-widget-root.badge-mode.expand-up .badge-quick-popover {
+  margin-bottom: 8px;
+}
+
+.desktop-widget-root.badge-mode.expand-down .badge-quick-popover {
+  margin-top: 8px;
 }
 
 .badge-popover-item {
@@ -3139,12 +3431,13 @@ body.is-widget-window #root {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
   border: none;
   color: var(--text-primary);
   font-size: 11px;
   font-weight: 600;
+  font-family: inherit;
   cursor: pointer;
   transition: all 0.15s ease;
   width: 100%;
@@ -3152,11 +3445,11 @@ body.is-widget-window #root {
 }
 
 .badge-popover-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface-hover);
 }
 
 .badge-popover-item.stealth-active {
-  color: #10b981;
+  color: var(--primary);
 }
 
 .badge-popover-item.close:hover {

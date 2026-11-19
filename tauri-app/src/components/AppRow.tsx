@@ -31,7 +31,7 @@ function getFallbackGradient(name: string): { bg: string; color: string } {
   return gradients[Math.abs(hash) % gradients.length];
 }
 
-export default function AppRow({
+export default React.memo(function AppRow({
   window: win,
   shielded,
   onToggle,
@@ -144,4 +144,4 @@ export default function AppRow({
       </div>
     </div>
   );
-}
+});
