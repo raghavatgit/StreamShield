@@ -36,11 +36,12 @@
 -  **Zero-Latency Hardware Exclusion**: Leverages the Windows Desktop Window Manager (`DWM`) compositing pipeline natively.
 -  **100% Standalone & Portable**: Single ~3.1 MB executable. No installation required, zero background drivers, zero bloat.
 - **Comprehensive Settings Subsystem**: Windows Startup autostart, minimize to tray, customizable scan polling intervals (2s to 10s), process PID badges, and batch confirmation dialogs.
-- **Desktop Screen Widgets & Compact Mode**:
-  - **Floating Screen Widgets**: Dynamic Pill, Compact Dock, and Corner Status Badge HUDs masked with `WDA_EXCLUDEFROMCAPTURE` so you can control privacy on desktop while keeping streams 100% clean.
+- **Desktop Screen Widgets, Custom Tray Menu & Compact Mode**:
+  - **Floating Screen Widgets**: Dynamic Pill capsule, Floating Compact Dock with top coverage bar & mode switcher, and Orbital Ring Corner Status Badge HUDs masked with `WDA_EXCLUDEFROMCAPTURE` so you can control privacy on desktop while keeping streams 100% clean.
+  - **Theme-Compliant Tray Quick-Control Popover**: Custom frameless transparent right-click tray menu with instant 1-tap app toggles, shield mode switching, stealth eye, widget style switcher, keyboard navigation, and capture stealth.
   - **Ultra-Compact Icon Grid Mode**: One-click switch to a tight, text-free icon grid with a master switch and stealth toggle.
 - **9 Dynamic Theme Presets**:
-  - Includes **Neon Violet**, **Cyberpunk Cyan**, **Matrix Emerald**, **Crimson Ruby**, **Solar Amber**, **Ocean Sapphire**, **Discord Slate**, **Midnight Obsidian**, and **Clean Light**, dynamically generating all borders, glows, cards, and widget surfaces.
+  - Includes **Neon Violet**, **Cyberpunk Cyan**, **Matrix Emerald**, **Crimson Ruby**, **Solar Amber**, **Ocean Sapphire**, **Discord Slate**, **Midnight Obsidian**, and **Clean Light**, dynamically generating per-theme atmospheric glass surfaces across the main window, desktop widgets, and tray popover.
 -  **Autonomous Background Watchdog**: Automatically detects and re-shields private applications when they restart or open new secondary windows.
 -  **Anti-Sleep & Tray Throttling Protection**: Native Windows power management prevents background thread suspension when docked to the system tray.
 -  **Live Process Search & Filtering**: Instant search across running processes, window titles, and PIDs.
@@ -86,7 +87,7 @@ Download **`streamshield.exe`** from the [Latest Releases](https://github.com/ra
 - **No installation needed** - simply double-click and run!
 
 ### Option 2: Windows Installer
-Download **`StreamShield_0.2.4_x64-setup.exe`** for a standard Windows installation with Desktop and Start Menu shortcuts, or **`StreamShield_0.2.4_x64_en-US.msi`** for enterprise deployment.
+Download **`StreamShield_0.2.5_x64-setup.exe`** for a standard Windows installation with Desktop and Start Menu shortcuts, or **`StreamShield_0.2.5_x64_en-US.msi`** for enterprise deployment.
 
 ---
 
@@ -122,8 +123,8 @@ npx tauri build
 The optimized production binaries and installers will be generated at:
 ```
 target/release/streamshield.exe
-target/release/bundle/nsis/StreamShield_0.2.4_x64-setup.exe
-target/release/bundle/msi/StreamShield_0.2.4_x64_en-US.msi
+target/release/bundle/nsis/StreamShield_0.2.5_x64-setup.exe
+target/release/bundle/msi/StreamShield_0.2.5_x64_en-US.msi
 ```
 
 ---

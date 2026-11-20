@@ -589,14 +589,15 @@ export default function SettingsModal({
                         <span className="mini-pill-dot" />
                         <span className="mini-pill-tag">3/5</span>
                         <div className="mini-pill-icons">
-                          <span className="mini-icon" />
+                          <span className="mini-icon is-active" />
+                          <span className="mini-icon is-active" />
                           <span className="mini-icon" />
                         </div>
                       </div>
                     </div>
                     <div className="widget-style-info">
                       <div className="widget-style-name">Dynamic Pill / Island</div>
-                      <div className="widget-style-desc">Floating horizontal capsule with shield counter, mini app avatars, master shield switch & stealth eye</div>
+                      <div className="widget-style-desc">Precision floating capsule with live telemetry dot, illuminated app indicators, master shield & stealth eye</div>
                     </div>
                     {(!settings.widget_style || settings.widget_style === "pill") && <IconCheck size={14} className="theme-active-tick" />}
                   </div>
@@ -606,16 +607,19 @@ export default function SettingsModal({
                     onClick={() => handleSelectWidgetStyle("dock")}
                   >
                     <div className="widget-style-preview dock-preview">
-                      <div className="preview-dock-grid">
-                        <span className="dock-dot" />
-                        <span className="dock-dot active" />
-                        <span className="dock-dot" />
-                        <span className="dock-dot" />
+                      <div className="preview-dock-shell">
+                        <span className="preview-dock-bar" />
+                        <div className="preview-dock-grid">
+                          <span className="dock-dot active" />
+                          <span className="dock-dot active" />
+                          <span className="dock-dot" />
+                          <span className="dock-dot" />
+                        </div>
                       </div>
                     </div>
                     <div className="widget-style-info">
                       <div className="widget-style-name">Floating Compact Dock</div>
-                      <div className="widget-style-desc">Tactile squircle grid of open apps with 1-tap capture shield toggles and quick action bar</div>
+                      <div className="widget-style-desc">Command deck with top coverage telemetry bar, 4-column squircle grid, and integrated mode switcher</div>
                     </div>
                     {settings.widget_style === "dock" && <IconCheck size={14} className="theme-active-tick" />}
                   </div>
@@ -626,12 +630,16 @@ export default function SettingsModal({
                   >
                     <div className="widget-style-preview badge-preview">
                       <div className="preview-badge-circle">
+                        <svg className="preview-badge-ring" viewBox="0 0 28 28" aria-hidden="true">
+                          <circle cx="14" cy="14" r="11" className="preview-badge-track" />
+                          <circle cx="14" cy="14" r="11" className="preview-badge-arc" />
+                        </svg>
                         <span className="mini-badge-dot" />
                       </div>
                     </div>
                     <div className="widget-style-info">
                       <div className="widget-style-name">Corner Status Badge</div>
-                      <div className="widget-style-desc">Minimalist ambient 52px floating glowing circle showing shield status, with interactive popover controls</div>
+                      <div className="widget-style-desc">Orbital progress ring framing the StreamShield emblem with an expandable quick-control HUD</div>
                     </div>
                     {settings.widget_style === "badge" && <IconCheck size={14} className="theme-active-tick" />}
                   </div>

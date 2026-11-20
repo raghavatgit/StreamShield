@@ -2,6 +2,19 @@
 
 All notable changes to StreamShield are documented in this file.
 
+## [0.2.5] - 2026-11-20
+### Added & Improved
+- **Theme-Compliant Custom Tray Right-Click Popover (`tray_menu`)**:
+  - Replaced the native Windows `HMENU` tray context menu with a pre-warmed, frameless transparent WebView2 popover featuring top coverage telemetry, action trio (`Shield All` / `Stealth` / `Reapply`), scrollable 1-tap app list with live native icons, Capture Mode segmented selector (`Transparent` / `Black Mask`), Desktop Widget toggle + `Pill | Dock | Badge` switcher, `Compact Window` switch, `Preferences`, and `Quit`.
+  - Protected with `WS_EX_TOOLWINDOW`, Win11 DWM border/corner suppression, `apply_own_window_stealth` capture exclusion, multi-monitor/all-taskbar-edge positioning (`compute_tray_menu_position`), right-click blur-bounce suppression, and `Esc`/arrow-key keyboard navigation.
+- **Minimalistic, Futuristic Desktop Widget Redesign**:
+  - **Dynamic Pill / Island**: Specular rim lighting, top active `--brand-gradient` shimmer strip, hover/focus-revealed drag grip, live status pulse dot with tabular counter, squircle app tiles with luminous bottom shield bars, and `IconShieldCheck` / `IconShield` state icons.
+  - **Floating Compact Dock**: Top edge-to-edge `--brand-gradient` coverage progress rail, `ALL` / `ACTIVE` / `IDLE` telemetry tag, elevated 4-column squircle grid, and integrated `Pill | Dock | Badge` footer switcher.
+  - **Corner Status Badge**: Precision SVG orbital progress ring (`ss-badge-ring`) around the StreamShield emblem with an expandable HUD containing telemetry ratio, quick action chips, 5 quick app toggles, mode switcher, and `Hide Widget`.
+  - Updated Settings Preferences widget preview cards to match all three redesigned HUDs.
+- **Per-Theme Atmospheric Glass & Accessibility Tokens**:
+  - Added per-theme `surfaceRgb` base glass palettes, sRGB-contrast-computed `--on-primary`, semantic `--widget-*` / `--tray-*` tokens (removing hardcoded emerald/amber widget overrides), standard thin themed scrollbars with legacy WebKit fallbacks, and Windows Forced Colors (`forced-colors: active`) high-contrast support across all 9 themes.
+
 ## [0.2.4] - 2026-11-19
 ### Fixed
 - **Desktop Screen Widget Overhaul**:

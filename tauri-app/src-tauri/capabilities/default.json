@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Permissions for main and widget window controls and events",
-  "windows": ["main", "widget", "*"],
+  "windows": ["main", "widget", "tray_menu", "*"],
   "permissions": [
     "core:default",
     "core:window:default",

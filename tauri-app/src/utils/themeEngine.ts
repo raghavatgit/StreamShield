@@ -15,6 +15,7 @@ export interface ThemeDefinition {
   mode: "dark" | "light";
   primary: string;
   accent: string;
+  surfaceRgb: [number, number, number];
   colors: [string, string];
 }
 
@@ -25,6 +26,7 @@ export const THEMES: ThemeDefinition[] = [
     mode: "dark",
     primary: "#a855f7",
     accent: "#ec4899",
+    surfaceRgb: [12, 11, 22],
     colors: ["#a855f7", "#ec4899"],
   },
   {
@@ -33,6 +35,7 @@ export const THEMES: ThemeDefinition[] = [
     mode: "dark",
     primary: "#00f0ff",
     accent: "#ff007f",
+    surfaceRgb: [7, 13, 22],
     colors: ["#00f0ff", "#ff007f"],
   },
   {
@@ -41,6 +44,7 @@ export const THEMES: ThemeDefinition[] = [
     mode: "dark",
     primary: "#10b981",
     accent: "#06b6d4",
+    surfaceRgb: [8, 17, 17],
     colors: ["#10b981", "#06b6d4"],
   },
   {
@@ -49,6 +53,7 @@ export const THEMES: ThemeDefinition[] = [
     mode: "dark",
     primary: "#f43f5e",
     accent: "#fb923c",
+    surfaceRgb: [18, 10, 15],
     colors: ["#f43f5e", "#fb923c"],
   },
   {
@@ -57,6 +62,7 @@ export const THEMES: ThemeDefinition[] = [
     mode: "dark",
     primary: "#f59e0b",
     accent: "#ef4444",
+    surfaceRgb: [18, 13, 10],
     colors: ["#f59e0b", "#ef4444"],
   },
   {
@@ -65,6 +71,7 @@ export const THEMES: ThemeDefinition[] = [
     mode: "dark",
     primary: "#3b82f6",
     accent: "#6366f1",
+    surfaceRgb: [9, 15, 28],
     colors: ["#3b82f6", "#6366f1"],
   },
   {
@@ -73,6 +80,7 @@ export const THEMES: ThemeDefinition[] = [
     mode: "dark",
     primary: "#5865f2",
     accent: "#23a55a",
+    surfaceRgb: [26, 27, 30],
     colors: ["#5865f2", "#23a55a"],
   },
   {
@@ -81,6 +89,7 @@ export const THEMES: ThemeDefinition[] = [
     mode: "dark",
     primary: "#94a3b8",
     accent: "#cbd5e1",
+    surfaceRgb: [10, 12, 16],
     colors: ["#94a3b8", "#cbd5e1"],
   },
   {
@@ -89,6 +98,7 @@ export const THEMES: ThemeDefinition[] = [
     mode: "light",
     primary: "#4f46e5",
     accent: "#0284c7",
+    surfaceRgb: [255, 255, 255],
     colors: ["#ffffff", "#4f46e5"],
   },
 ];
@@ -99,16 +109,31 @@ function hexToRgb(hex: string): [number, number, number] {
   return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
 }
 
+function relativeLuminance(r: number, g: number, b: number): number {
+  const linearize = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b);
+}
+
 export function applyDynamicTheme(themeId: ThemeType) {
   const theme = THEMES.find((t) => t.id === themeId) || THEMES[0];
   const root = document.documentElement;
 
   root.setAttribute("data-theme", theme.id);
+  root.style.colorScheme = theme.mode;
 
   const [pr, pg, pb] = hexToRgb(theme.primary);
   const [ar, ag, ab] = hexToRgb(theme.accent);
-  const luminance = 0.299 * pr + 0.587 * pg + 0.114 * pb;
-  const onPrimary = luminance > 150 ? "#061018" : "#ffffff";
+  const [sr, sg, sb] = theme.surfaceRgb;
+  const lum = relativeLuminance(pr, pg, pb);
+  const contrastWhite = 1.05 / (lum + 0.05);
+  const contrastDark = (lum + 0.05) / (0.0044 + 0.05);
+  const onPrimary = contrastDark > contrastWhite ? "#061018" : "#ffffff";
+
+  root.style.setProperty("--primary-rgb", `${pr}, ${pg}, ${pb}`);
+  root.style.setProperty("--accent-rgb", `${ar}, ${ag}, ${ab}`);
 
   if (theme.mode === "light") {
     root.style.setProperty("--bg-base", "#f1f5f9");
@@ -144,15 +169,32 @@ export function applyDynamicTheme(themeId: ThemeType) {
     root.style.setProperty("--card-shadow", "0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04)");
     root.style.setProperty("--inset-shadow", "inset 0 1px 2px rgba(15, 23, 42, 0.06)");
 
-    // Widget Tokens (Light Mode)
+    // Widget & Tray Tokens (Light Mode)
     root.style.setProperty("--widget-bg", "rgba(255, 255, 255, 0.94)");
     root.style.setProperty("--widget-popover-bg", "rgba(255, 255, 255, 0.98)");
-    root.style.setProperty("--widget-border", `rgba(${pr}, ${pg}, ${pb}, 0.45)`);
-    root.style.setProperty("--widget-shadow", `0 8px 24px rgba(15, 23, 42, 0.16), 0 0 12px rgba(${pr}, ${pg}, ${pb}, 0.18)`);
-    root.style.setProperty("--widget-tile-bg", "rgba(15, 23, 42, 0.05)");
-    root.style.setProperty("--widget-tile-hover", "rgba(15, 23, 42, 0.11)");
-    root.style.setProperty("--widget-tile-shielded", `rgba(${pr}, ${pg}, ${pb}, 0.14)`);
-    root.style.setProperty("--widget-divider", "rgba(15, 23, 42, 0.12)");
+    root.style.setProperty("--widget-border", `rgba(${pr}, ${pg}, ${pb}, 0.28)`);
+    root.style.setProperty("--widget-border-strong", `rgba(${pr}, ${pg}, ${pb}, 0.62)`);
+    root.style.setProperty("--widget-specular", "rgba(255, 255, 255, 0.95)");
+    root.style.setProperty(
+      "--widget-shadow",
+      `0 12px 28px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(${pr}, ${pg}, ${pb}, 0.10)`
+    );
+    root.style.setProperty("--widget-tile-bg", "rgba(15, 23, 42, 0.045)");
+    root.style.setProperty("--widget-tile-hover", "rgba(15, 23, 42, 0.09)");
+    root.style.setProperty("--widget-tile-shielded", `rgba(${pr}, ${pg}, ${pb}, 0.12)`);
+    root.style.setProperty("--widget-divider", "rgba(15, 23, 42, 0.10)");
+    root.style.setProperty("--widget-ring-track", "rgba(15, 23, 42, 0.13)");
+    root.style.setProperty("--widget-active-bg", `rgba(${pr}, ${pg}, ${pb}, 0.13)`);
+    root.style.setProperty("--widget-active-fg", theme.primary);
+    root.style.setProperty("--widget-partial-bg", `rgba(${ar}, ${ag}, ${ab}, 0.13)`);
+    root.style.setProperty("--widget-partial-fg", theme.accent);
+    root.style.setProperty("--tray-bg", "rgba(255, 255, 255, 0.97)");
+    root.style.setProperty("--tray-surface", "rgba(15, 23, 42, 0.04)");
+    root.style.setProperty("--tray-row-hover", "rgba(15, 23, 42, 0.075)");
+    root.style.setProperty("--tray-segment-bg", "rgba(15, 23, 42, 0.06)");
+    root.style.setProperty("--tray-segment-active", `rgba(${pr}, ${pg}, ${pb}, 0.14)`);
+    root.style.setProperty("--scrollbar-thumb", "rgba(15, 23, 42, 0.34)");
+    root.style.setProperty("--scrollbar-track", "rgba(15, 23, 42, 0.04)");
   } else {
     root.style.setProperty("--bg-base", "#07090e");
     root.style.setProperty("--bg-app", "#07090e");
@@ -187,14 +229,34 @@ export function applyDynamicTheme(themeId: ThemeType) {
     root.style.setProperty("--card-shadow", "0 4px 16px rgba(0, 0, 0, 0.45)");
     root.style.setProperty("--inset-shadow", "inset 0 1px 3px rgba(0, 0, 0, 0.4)");
 
-    // Widget Tokens (Dark Mode)
-    root.style.setProperty("--widget-bg", "rgba(13, 19, 34, 0.92)");
-    root.style.setProperty("--widget-popover-bg", "rgba(13, 19, 34, 0.97)");
-    root.style.setProperty("--widget-border", `rgba(${pr}, ${pg}, ${pb}, 0.50)`);
-    root.style.setProperty("--widget-shadow", `0 8px 24px rgba(0, 0, 0, 0.65), 0 0 14px rgba(${pr}, ${pg}, ${pb}, 0.28)`);
-    root.style.setProperty("--widget-tile-bg", "rgba(255, 255, 255, 0.06)");
-    root.style.setProperty("--widget-tile-hover", "rgba(255, 255, 255, 0.14)");
-    root.style.setProperty("--widget-tile-shielded", `rgba(${pr}, ${pg}, ${pb}, 0.18)`);
-    root.style.setProperty("--widget-divider", "rgba(255, 255, 255, 0.12)");
+    // Widget & Tray Tokens (Bespoke Per-Theme Atmospheric Glass)
+    root.style.setProperty("--widget-bg", `rgba(${sr}, ${sg}, ${sb}, 0.91)`);
+    root.style.setProperty(
+      "--widget-popover-bg",
+      `rgba(${Math.min(255, sr + 5)}, ${Math.min(255, sg + 5)}, ${Math.min(255, sb + 7)}, 0.97)`
+    );
+    root.style.setProperty("--widget-border", `rgba(${pr}, ${pg}, ${pb}, 0.34)`);
+    root.style.setProperty("--widget-border-strong", `rgba(${pr}, ${pg}, ${pb}, 0.72)`);
+    root.style.setProperty("--widget-specular", "rgba(255, 255, 255, 0.14)");
+    root.style.setProperty(
+      "--widget-shadow",
+      `0 12px 30px rgba(0, 0, 0, 0.62), 0 2px 8px rgba(0, 0, 0, 0.44), 0 0 18px rgba(${pr}, ${pg}, ${pb}, 0.18)`
+    );
+    root.style.setProperty("--widget-tile-bg", "rgba(255, 255, 255, 0.048)");
+    root.style.setProperty("--widget-tile-hover", "rgba(255, 255, 255, 0.11)");
+    root.style.setProperty("--widget-tile-shielded", `rgba(${pr}, ${pg}, ${pb}, 0.17)`);
+    root.style.setProperty("--widget-divider", "rgba(255, 255, 255, 0.09)");
+    root.style.setProperty("--widget-ring-track", "rgba(255, 255, 255, 0.13)");
+    root.style.setProperty("--widget-active-bg", `rgba(${pr}, ${pg}, ${pb}, 0.18)`);
+    root.style.setProperty("--widget-active-fg", theme.primary);
+    root.style.setProperty("--widget-partial-bg", `rgba(${ar}, ${ag}, ${ab}, 0.18)`);
+    root.style.setProperty("--widget-partial-fg", theme.accent);
+    root.style.setProperty("--tray-bg", `rgba(${sr}, ${sg}, ${sb}, 0.95)`);
+    root.style.setProperty("--tray-surface", "rgba(255, 255, 255, 0.045)");
+    root.style.setProperty("--tray-row-hover", "rgba(255, 255, 255, 0.085)");
+    root.style.setProperty("--tray-segment-bg", "rgba(255, 255, 255, 0.055)");
+    root.style.setProperty("--tray-segment-active", `rgba(${pr}, ${pg}, ${pb}, 0.22)`);
+    root.style.setProperty("--scrollbar-thumb", `rgba(${pr}, ${pg}, ${pb}, 0.45)`);
+    root.style.setProperty("--scrollbar-track", "rgba(255, 255, 255, 0.03)");
   }
 }

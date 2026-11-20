@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import DesktopWidget from "./components/DesktopWidget";
+import TrayMenu from "./components/TrayMenu";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ThemeType, applyDynamicTheme } from "./utils/themeEngine";
 import "./index.css";
@@ -13,22 +14,34 @@ interface WidgetInitPayload {
   widget_stealth?: boolean;
 }
 
+interface TrayInitPayload {
+  theme?: ThemeType;
+  shield_mode?: "exclude" | "monitor";
+  compact_mode?: boolean;
+  self_stealth?: boolean;
+  widget_enabled?: boolean;
+  widget_style?: "pill" | "dock" | "badge";
+}
+
 declare global {
   interface Window {
     __STREAMSHIELD_WIDGET_INIT__?: WidgetInitPayload;
+    __STREAMSHIELD_TRAY_INIT__?: TrayInitPayload;
   }
 }
 
-function checkIsWidget(): boolean {
-  if (typeof window !== "undefined" && window.__STREAMSHIELD_WIDGET_INIT__) {
-    return true;
+type WindowMode = "main" | "widget" | "tray_menu";
+
+function detectWindowMode(): WindowMode {
+  if (typeof window !== "undefined") {
+    if (window.__STREAMSHIELD_TRAY_INIT__) return "tray_menu";
+    if (window.__STREAMSHIELD_WIDGET_INIT__) return "widget";
   }
 
   try {
     const curWin = getCurrentWebviewWindow();
-    if (curWin && curWin.label === "widget") {
-      return true;
-    }
+    if (curWin?.label === "tray_menu") return "tray_menu";
+    if (curWin?.label === "widget") return "widget";
   } catch {
     // fallback
   }
@@ -37,26 +50,36 @@ function checkIsWidget(): boolean {
     const internalLabel =
       (window as any).__TAURI_INTERNALS__?.metadata?.currentWebview?.label ||
       (window as any).__TAURI_INTERNALS__?.metadata?.currentWindow?.label;
-    if (internalLabel === "widget") return true;
+    if (internalLabel === "tray_menu") return "tray_menu";
+    if (internalLabel === "widget") return "widget";
 
+    if (window.location.hash.includes("tray_menu") || window.location.search.includes("tray_menu")) {
+      return "tray_menu";
+    }
     if (window.location.hash.includes("widget") || window.location.search.includes("widget")) {
-      return true;
+      return "widget";
     }
   }
-  return false;
+  return "main";
 }
 
-const isWidget = checkIsWidget();
-if (isWidget) {
+const windowMode = detectWindowMode();
+if (windowMode === "widget") {
   document.documentElement.classList.add("is-widget-window");
   document.body.classList.add("is-widget-window");
+  document.documentElement.style.background = "transparent";
+  document.body.style.background = "transparent";
+} else if (windowMode === "tray_menu") {
+  document.documentElement.classList.add("is-tray-menu-window");
+  document.body.classList.add("is-tray-menu-window");
   document.documentElement.style.background = "transparent";
   document.body.style.background = "transparent";
 }
 
 // Apply initial theme immediately before first React paint to eliminate FOUC
 const initialTheme: ThemeType =
-  (isWidget ? window.__STREAMSHIELD_WIDGET_INIT__?.theme : undefined) ||
+  (windowMode === "widget" ? window.__STREAMSHIELD_WIDGET_INIT__?.theme : undefined) ||
+  (windowMode === "tray_menu" ? window.__STREAMSHIELD_TRAY_INIT__?.theme : undefined) ||
   (localStorage.getItem("streamshield_theme") as ThemeType) ||
   "violet";
 applyDynamicTheme(initialTheme);
@@ -123,6 +146,14 @@ class ErrorBoundary extends React.Component<
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ErrorBoundary>{isWidget ? <DesktopWidget /> : <App />}</ErrorBoundary>
+    <ErrorBoundary>
+      {windowMode === "tray_menu" ? (
+        <TrayMenu />
+      ) : windowMode === "widget" ? (
+        <DesktopWidget />
+      ) : (
+        <App />
+      )}
+    </ErrorBoundary>
   </React.StrictMode>
 );

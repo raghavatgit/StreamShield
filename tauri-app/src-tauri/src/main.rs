@@ -7,9 +7,9 @@ mod config;
 mod nvidia_bypass;
 
 use std::sync::Mutex;
+use std::time::Instant;
 use serde::Serialize;
 use tauri::{
-    menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     webview::WebviewWindowBuilder,
     Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalRect, Size, State, WebviewUrl, WebviewWindow,
@@ -17,10 +17,13 @@ use tauri::{
 use window_manager::WindowInfo;
 use config::{load_config, save_config, AppSettings, ShieldConfig};
 
-/// Identical WebView2 browser flags shared by ALL windows (main + widget).
+/// Identical WebView2 browser flags shared by ALL windows (main + widget + tray_menu).
 /// WebView2 requires every window sharing a UserDataFolder to pass identical browser arguments,
 /// otherwise secondary WebView2 creation fails with HRESULT 0x8007139F (ERROR_INVALID_STATE).
 const WEBVIEW_BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows";
+
+const TRAY_MENU_WIDTH: f64 = 312.0;
+const TRAY_MENU_HEIGHT: f64 = 516.0;
 
 #[derive(Debug, Clone, Copy, Serialize, Default)]
 struct BadgeExpandResult {
@@ -44,13 +47,29 @@ struct WidgetInitPayload {
     widget_stealth: bool,
 }
 
+#[derive(Serialize)]
+struct TrayInitPayload {
+    theme: String,
+    shield_mode: String,
+    compact_mode: bool,
+    self_stealth: bool,
+    widget_enabled: bool,
+    widget_style: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct TrayMenuOpenedPayload {
+    origin: String,
+}
+
 struct AppState {
     config: Mutex<ShieldConfig>,
-    tray_status: Mutex<Option<MenuItem<tauri::Wry>>>,
     last_widget_pos: Mutex<Option<(i32, i32)>>,
     widget_badge_expanded: Mutex<bool>,
     badge_pre_expand_pos: Mutex<Option<(i32, i32)>>,
     badge_last_dir: Mutex<BadgeExpandResult>,
+    tray_menu_opened_at: Mutex<Option<Instant>>,
+    tray_menu_hidden_at: Mutex<Option<Instant>>,
 }
 
 // ── Windows Version & DWM helpers ───────────────────────────────────────────
@@ -479,194 +498,238 @@ fn get_autostart_registry() -> bool {
     false
 }
 
-// ── Tray status & menu helpers ──────────────────────────────────────────────
+// ── Tray tooltip & stealth sync helpers ──────────────────────────────────────
 
-fn tray_status_text(count: usize) -> String {
-    if count == 0 {
-        "No apps shielded".to_string()
-    } else {
-        format!("🛡️  {} app{} hidden from capture", count, if count == 1 { "" } else { "s" })
+fn update_tray_tooltip(app: &tauri::AppHandle, active_count: usize) {
+    if let Some(tray) = app.tray_by_id("main") {
+        let tip = if active_count == 0 {
+            "StreamShield — Idle".to_string()
+        } else {
+            format!(
+                "StreamShield — {} app{} shielded",
+                active_count,
+                if active_count == 1 { "" } else { "s" }
+            )
+        };
+        let _ = tray.set_tooltip(Some(tip));
     }
 }
 
-fn update_tray_status_count(state: &AppState, active_count: usize) {
-    if let Ok(guard) = state.tray_status.lock() {
-        if let Some(mi) = guard.as_ref() {
-            let _ = mi.set_text(tray_status_text(active_count));
+fn sync_auxiliary_windows_stealth(app: &tauri::AppHandle, effective_stealth: bool) {
+    #[cfg(windows)]
+    {
+        for label in ["widget", "tray_menu"] {
+            if let Some(w) = app.get_webview_window(label) {
+                if let Ok(hwnd) = w.hwnd() {
+                    let _ = injector::apply_own_window_stealth(hwnd.0 as _, effective_stealth);
+                }
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, effective_stealth);
+    }
+}
+
+fn compute_tray_menu_position(
+    wa: &PhysicalRect<i32, u32>,
+    click_x: i32,
+    click_y: i32,
+    menu_w: i32,
+    menu_h: i32,
+    gap: i32,
+) -> (i32, i32, &'static str) {
+    let wa_left = wa.position.x;
+    let wa_top = wa.position.y;
+    let wa_right = wa_left + wa.size.width as i32;
+    let wa_bottom = wa_top + wa.size.height as i32;
+
+    let (raw_x, raw_y, origin) = if click_y >= wa_bottom {
+        // Bottom taskbar
+        (click_x - menu_w + 28, wa_bottom - menu_h - gap, "bottom")
+    } else if click_y < wa_top {
+        // Top taskbar
+        (click_x - menu_w + 28, wa_top + gap, "top")
+    } else if click_x < wa_left {
+        // Left taskbar
+        (wa_left + gap, click_y - menu_h / 2, "left")
+    } else if click_x >= wa_right {
+        // Right taskbar
+        (wa_right - menu_w - gap, click_y - menu_h / 2, "right")
+    } else {
+        // Overflow tray flyout inside work_area
+        let mid_y = wa_top + (wa.size.height as i32) / 2;
+        if click_y >= mid_y {
+            (click_x - menu_w + 24, click_y - menu_h - gap, "bottom")
+        } else {
+            (click_x - menu_w + 24, click_y + gap, "top")
+        }
+    };
+
+    let (cx, cy) = clamp_to_work_area(wa, raw_x, raw_y, menu_w, menu_h);
+    (cx, cy, origin)
+}
+
+fn ensure_tray_menu_window(app: &tauri::AppHandle) -> Result<WebviewWindow, String> {
+    if let Some(win) = app.get_webview_window("tray_menu") {
+        return Ok(win);
+    }
+
+    let state = app.state::<AppState>();
+    let (init_payload, effective_stealth) = {
+        let cfg = state.config.lock().map_err(|e| e.to_string())?;
+        let payload = serde_json::to_string(&TrayInitPayload {
+            theme: cfg.settings.theme.clone(),
+            shield_mode: cfg.settings.shield_mode.clone(),
+            compact_mode: cfg.settings.compact_mode,
+            self_stealth: cfg.settings.self_stealth,
+            widget_enabled: cfg.settings.widget_enabled,
+            widget_style: cfg.settings.widget_style.clone(),
+        })
+        .unwrap_or_else(|_| "{}".to_string());
+        (payload, cfg.settings.self_stealth || cfg.settings.widget_stealth)
+    };
+
+    let init_script = format!(
+        "window.__STREAMSHIELD_TRAY_INIT__ = {}; \
+         if (document.documentElement) {{ document.documentElement.classList.add('is-tray-menu-window'); }}",
+        init_payload
+    );
+
+    let mut builder = WebviewWindowBuilder::new(app, "tray_menu", WebviewUrl::default())
+        .title("StreamShield Tray Menu")
+        .inner_size(TRAY_MENU_WIDTH, TRAY_MENU_HEIGHT)
+        .decorations(false)
+        .transparent(true)
+        .background_color(tauri::window::Color(0, 0, 0, 0))
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .shadow(false)
+        .visible(false)
+        .additional_browser_args(WEBVIEW_BROWSER_ARGS)
+        .initialization_script(&init_script);
+
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone()).map_err(|e| e.to_string())?;
+    }
+
+    let win = builder
+        .build()
+        .map_err(|e| format!("Failed to create tray menu window: {}", e))?;
+
+    #[cfg(windows)]
+    if let Ok(hwnd) = win.hwnd() {
+        configure_widget_window_win32(hwnd.0 as _);
+        let _ = injector::apply_own_window_stealth(hwnd.0 as _, effective_stealth);
+    }
+
+    Ok(win)
+}
+
+fn hide_tray_menu_internal(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("tray_menu") {
+        let _ = win.hide();
+    }
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut g) = state.tray_menu_hidden_at.lock() {
+            *g = Some(Instant::now());
         }
     }
 }
 
-fn build_tray_menu_from_windows(
-    app: &tauri::AppHandle,
-    wins: &[WindowInfo],
-) -> Result<Menu<tauri::Wry>, Box<dyn std::error::Error>> {
+fn show_or_toggle_tray_menu(app: &tauri::AppHandle, click_x: i32, click_y: i32) {
     let state = match app.try_state::<AppState>() {
         Some(s) => s,
-        None => return Err("AppState not found".into()),
+        None => return,
     };
 
-    let (shielded, mode, is_compact, widget_en, widget_st) = {
-        let cfg = state.config.lock().map_err(|_| "Config lock poisoned")?;
-        (
-            cfg.shielded_exes.clone(),
-            cfg.settings.shield_mode.clone(),
-            cfg.settings.compact_mode,
-            cfg.settings.widget_enabled,
-            cfg.settings.widget_style.clone(),
-        )
-    };
-
-    let active_count = wins.iter().filter(|w| w.is_shielded).count();
-
-    let show = MenuItem::with_id(app, "show", "🛡️  Open StreamShield", true, None::<&str>)?;
-    let sep1 = PredefinedMenuItem::separator(app)?;
-    let status_text = tray_status_text(active_count);
-    let status = MenuItem::with_id(app, "status", status_text, false, None::<&str>)?;
-    let sep2 = PredefinedMenuItem::separator(app)?;
-
-    if let Ok(mut guard) = state.tray_status.lock() {
-        *guard = Some(status.clone());
-    }
-
-    // ── Apps Toggle Submenu: unique running applications ──
-    let mut app_items: Vec<MenuItem<tauri::Wry>> = Vec::new();
-    let mut seen_exes = std::collections::HashSet::new();
-    for w in wins {
-        let exe_lower = w.exe_name.to_lowercase();
-        if !seen_exes.insert(exe_lower.clone()) {
-            continue;
-        }
-        let is_sh = w.is_shielded || shielded.contains(&exe_lower);
-        let prefix = if is_sh { "✓  " } else { "○  " };
-        let label = format!("{}{}", prefix, w.exe_name);
-        let item_id = format!("toggle_app:{}", w.exe_name);
-        if let Ok(item) = MenuItem::with_id(app, item_id, label, true, None::<&str>) {
-            app_items.push(item);
-        }
-        if app_items.len() >= 15 {
-            break;
+    if let Some(win) = app.get_webview_window("tray_menu") {
+        if win.is_visible().unwrap_or(false) {
+            hide_tray_menu_internal(app);
+            return;
         }
     }
 
-    let item_refs: Vec<&dyn IsMenuItem<tauri::Wry>> =
-        app_items.iter().map(|i| i as &dyn IsMenuItem<tauri::Wry>).collect();
-    let empty_item = MenuItem::with_id(app, "noop", "(No detectable windows)", false, None::<&str>)?;
-    let apps_submenu = if app_items.is_empty() {
-        Submenu::with_items(app, "📱  Toggle Apps", true, &[&empty_item])?
-    } else {
-        Submenu::with_items(app, "📱  Toggle Apps", true, &item_refs)?
-    };
-
-    // ── Quick Actions Submenu ──
-    let shield_all = MenuItem::with_id(app, "tray_shield_all", "🛡️  Shield All Open Apps", true, None::<&str>)?;
-    let unshield_all = MenuItem::with_id(app, "tray_unshield_all", "🔓  Unshield All", true, None::<&str>)?;
-    let reapply = MenuItem::with_id(app, "tray_reapply", "🔄  Reapply Protection", true, None::<&str>)?;
-    let quick_actions = Submenu::with_items(app, "⚡  Quick Actions", true, &[&shield_all, &unshield_all, &reapply])?;
-
-    // ── Capture Mode Submenu ──
-    let mode_exclude_label = if mode == "exclude" {
-        "✓  Transparent (OBS / Discord)"
-    } else {
-        "○  Transparent (OBS / Discord)"
-    };
-    let mode_monitor_label = if mode == "monitor" {
-        "✓  Black Screen Mask (ShadowPlay / Medal)"
-    } else {
-        "○  Black Screen Mask (ShadowPlay / Medal)"
-    };
-    let m_exclude = MenuItem::with_id(app, "tray_mode_exclude", mode_exclude_label, true, None::<&str>)?;
-    let m_monitor = MenuItem::with_id(app, "tray_mode_monitor", mode_monitor_label, true, None::<&str>)?;
-    let mode_submenu = Submenu::with_items(app, "🎯  Shield Mode", true, &[&m_exclude, &m_monitor])?;
-
-    // ── Compact Mode Toggle ──
-    let compact_label = if is_compact { "✓  Compact Mode" } else { "○  Compact Mode" };
-    let m_compact = MenuItem::with_id(app, "tray_toggle_compact", compact_label, true, None::<&str>)?;
-
-    // ── Desktop Widget Submenu ──
-    let w_toggle_label = if widget_en { "✓  Enable Desktop Widget" } else { "○  Enable Desktop Widget" };
-    let m_widget_toggle = MenuItem::with_id(app, "tray_widget_toggle", w_toggle_label, true, None::<&str>)?;
-    let sep_w = PredefinedMenuItem::separator(app)?;
-    let m_w_pill = MenuItem::with_id(
-        app,
-        "tray_widget_style_pill",
-        if widget_st == "pill" { "●  Dynamic Pill" } else { "○  Dynamic Pill" },
-        true,
-        None::<&str>,
-    )?;
-    let m_w_dock = MenuItem::with_id(
-        app,
-        "tray_widget_style_dock",
-        if widget_st == "dock" { "●  Compact Dock" } else { "○  Compact Dock" },
-        true,
-        None::<&str>,
-    )?;
-    let m_w_badge = MenuItem::with_id(
-        app,
-        "tray_widget_style_badge",
-        if widget_st == "badge" { "●  Corner Badge" } else { "○  Corner Badge" },
-        true,
-        None::<&str>,
-    )?;
-
-    let widget_submenu = Submenu::with_items(
-        app,
-        "🖥️  Desktop Widget",
-        true,
-        &[&m_widget_toggle, &sep_w, &m_w_pill, &m_w_dock, &m_w_badge],
-    )?;
-
-    let sep3 = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit StreamShield", true, None::<&str>)?;
-
-    let menu = Menu::with_items(
-        app,
-        &[
-            &show,
-            &sep1,
-            &status,
-            &sep2,
-            &apps_submenu,
-            &quick_actions,
-            &mode_submenu,
-            &m_compact,
-            &widget_submenu,
-            &sep3,
-            &quit,
-        ],
-    )?;
-
-    Ok(menu)
-}
-
-fn create_tray_menu(app: &tauri::AppHandle) -> Result<Menu<tauri::Wry>, Box<dyn std::error::Error>> {
-    let (shielded, mode, auto_reapply) = app
-        .try_state::<AppState>()
-        .and_then(|s| {
-            s.config
-                .lock()
-                .ok()
-                .map(|c| (c.shielded_exes.clone(), c.settings.shield_mode.clone(), c.settings.auto_reapply))
+    // Prevent right-click bounce: if Windows blur-on-mousedown just hid the menu <250ms ago, stay closed
+    let recently_hidden = state
+        .tray_menu_hidden_at
+        .lock()
+        .ok()
+        .and_then(|mut g| {
+            let hit = g.map(|t| t.elapsed().as_millis() < 250).unwrap_or(false);
+            if hit {
+                *g = None;
+            }
+            Some(hit)
         })
-        .unwrap_or_default();
-    let wins = window_manager::enumerate_windows(&shielded, &mode, auto_reapply);
-    build_tray_menu_from_windows(app, &wins)
-}
+        .unwrap_or(false);
+    if recently_hidden {
+        return;
+    }
 
-fn rebuild_tray_menu_with_windows(app: &tauri::AppHandle, wins: &[WindowInfo]) {
-    if let Some(tray) = app.tray_by_id("main") {
-        if let Ok(menu) = build_tray_menu_from_windows(app, wins) {
-            let _ = tray.set_menu(Some(menu));
+    let win = match ensure_tray_menu_window(app) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("[StreamShield] Tray menu error: {}", e);
+            return;
+        }
+    };
+
+    let monitor = find_monitor_for_point(app, click_x, click_y);
+    let (px, py, origin) = if let Some(m) = monitor {
+        let scale = m.scale_factor();
+        let wa = m.work_area();
+        let menu_w = (TRAY_MENU_WIDTH * scale).round() as i32;
+        let menu_h = (TRAY_MENU_HEIGHT * scale).round() as i32;
+        let gap = (6.0 * scale).round() as i32;
+        compute_tray_menu_position(wa, click_x, click_y, menu_w, menu_h, gap)
+    } else {
+        (click_x - 280, click_y - 520, "bottom")
+    };
+
+    let effective_stealth = state
+        .config
+        .lock()
+        .map(|c| c.settings.self_stealth || c.settings.widget_stealth)
+        .unwrap_or(true);
+
+    let _ = win.set_position(PhysicalPosition::new(px, py));
+    let _ = win.set_size(Size::Logical(LogicalSize::new(TRAY_MENU_WIDTH, TRAY_MENU_HEIGHT)));
+    let _ = win.set_position(PhysicalPosition::new(px, py));
+    let _ = win.set_always_on_top(true);
+
+    #[cfg(windows)]
+    if let Ok(hwnd) = win.hwnd() {
+        configure_widget_window_win32(hwnd.0 as _);
+        let _ = injector::apply_own_window_stealth(hwnd.0 as _, effective_stealth);
+    }
+
+    if let Ok(mut g) = state.tray_menu_opened_at.lock() {
+        *g = Some(Instant::now());
+    }
+    if let Ok(mut g) = state.tray_menu_hidden_at.lock() {
+        *g = None;
+    }
+
+    let _ = win.show();
+    let _ = win.set_focus();
+
+    #[cfg(windows)]
+    if let Ok(hwnd) = win.hwnd() {
+        use winapi::um::winuser::SetForegroundWindow;
+        unsafe {
+            SetForegroundWindow(hwnd.0 as _);
         }
     }
-}
 
-fn rebuild_tray_menu(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some(tray) = app.tray_by_id("main") {
-        let menu = create_tray_menu(app)?;
-        tray.set_menu(Some(menu))?;
-    }
-    Ok(())
+    let _ = win.emit(
+        "tray_menu_opened",
+        TrayMenuOpenedPayload {
+            origin: origin.to_string(),
+        },
+    );
 }
 
 // ── Tauri commands ───────────────────────────────────────────────────────────
@@ -694,7 +757,7 @@ async fn get_windows(app: tauri::AppHandle) -> Vec<WindowInfo> {
 
         let wins = window_manager::enumerate_windows(&shielded, &mode, auto_reapply);
         let active_count = wins.iter().filter(|w| w.is_shielded).count();
-        update_tray_status_count(&state, active_count);
+        update_tray_tooltip(&app, active_count);
         wins
     })
     .await
@@ -758,7 +821,8 @@ async fn toggle_shield(
         };
 
         let wins = window_manager::enumerate_windows(&shielded, &shield_mode, auto_reapply);
-        rebuild_tray_menu_with_windows(&app, &wins);
+        let active_count = wins.iter().filter(|w| w.is_shielded).count();
+        update_tray_tooltip(&app, active_count);
         let _ = app.emit("shield_state_changed", ());
         Ok(true)
     })
@@ -817,7 +881,8 @@ async fn shield_all_windows(app: tauri::AppHandle) -> Result<usize, String> {
         };
 
         let updated_wins = window_manager::enumerate_windows(&shielded, &mode, auto_reapply);
-        rebuild_tray_menu_with_windows(&app, &updated_wins);
+        let active_count = updated_wins.iter().filter(|w| w.is_shielded).count();
+        update_tray_tooltip(&app, active_count);
         let _ = app.emit("shield_state_changed", ());
         Ok(newly_shielded)
     })
@@ -852,7 +917,8 @@ async fn reapply_shields(app: tauri::AppHandle) -> Vec<String> {
             .map(|w| w.exe_name.clone())
             .collect();
 
-        rebuild_tray_menu_with_windows(&app, &wins);
+        let active_count = wins.iter().filter(|w| w.is_shielded).count();
+        update_tray_tooltip(&app, active_count);
         let _ = app.emit("shield_state_changed", ());
         res
     })
@@ -937,7 +1003,7 @@ async fn update_settings(mut settings: AppSettings, app: tauri::AppHandle) -> Re
             }
         }
 
-        let (shielded_exes, auto_reapply) = {
+        let (shielded_exes, _auto_reapply) = {
             let mut config = state.config.lock().map_err(|e| e.to_string())?;
             config.settings = settings.clone();
             save_config(&config);
@@ -962,6 +1028,7 @@ async fn update_settings(mut settings: AppSettings, app: tauri::AppHandle) -> Re
             }
             let _ = app.emit("self_shield_changed", settings.self_stealth);
         }
+        sync_auxiliary_windows_stealth(&app, settings.self_stealth || settings.widget_stealth);
 
         // Reapply active shields immediately if shield_mode switched (exclude <-> monitor)
         if settings.shield_mode != prev_shield_mode && !shielded_exes.is_empty() {
@@ -975,8 +1042,6 @@ async fn update_settings(mut settings: AppSettings, app: tauri::AppHandle) -> Re
 
         open_or_update_widget(&app)?;
 
-        let wins = window_manager::enumerate_windows(&shielded_exes, &settings.shield_mode, auto_reapply);
-        rebuild_tray_menu_with_windows(&app, &wins);
         let _ = app.emit("settings_changed", &settings);
         Ok(settings)
     })
@@ -995,12 +1060,11 @@ async fn reset_settings(app: tauri::AppHandle) -> Result<AppSettings, String> {
             let _ = set_mpo_fix_registry(false);
         }
 
-        let shielded_exes = {
+        {
             let mut config = state.config.lock().map_err(|e| e.to_string())?;
             config.settings = default_settings.clone();
             save_config(&config);
-            config.shielded_exes.clone()
-        };
+        }
 
         if let Ok(mut pos_guard) = state.last_widget_pos.lock() {
             *pos_guard = None;
@@ -1013,14 +1077,12 @@ async fn reset_settings(app: tauri::AppHandle) -> Result<AppSettings, String> {
                 let _ = injector::apply_own_window_stealth(hwnd.0 as _, default_settings.self_stealth);
             }
         }
+        sync_auxiliary_windows_stealth(
+            &app,
+            default_settings.self_stealth || default_settings.widget_stealth,
+        );
 
         let _ = open_or_update_widget(&app);
-        let wins = window_manager::enumerate_windows(
-            &shielded_exes,
-            &default_settings.shield_mode,
-            default_settings.auto_reapply,
-        );
-        rebuild_tray_menu_with_windows(&app, &wins);
 
         let _ = app.emit("compact_mode_changed", default_settings.compact_mode);
         let _ = app.emit("self_shield_changed", default_settings.self_stealth);
@@ -1055,16 +1117,13 @@ async fn clear_all_shields(app: tauri::AppHandle) -> Result<bool, String> {
             }
         }
 
-        let auto_reapply = {
+        {
             let mut config = state.config.lock().map_err(|e| e.to_string())?;
             config.shielded_exes.clear();
             save_config(&config);
-            config.settings.auto_reapply
-        };
+        }
 
-        let empty = std::collections::HashSet::new();
-        let updated_wins = window_manager::enumerate_windows(&empty, &mode, auto_reapply);
-        rebuild_tray_menu_with_windows(&app, &updated_wins);
+        update_tray_tooltip(&app, 0);
         let _ = app.emit("shield_state_changed", ());
         Ok(true)
     })
@@ -1124,17 +1183,11 @@ fn toggle_self_shield(enable: bool, app: tauri::AppHandle, state: State<AppState
                 injector::apply_own_window_stealth(hwnd.0 as _, enable)?;
             }
         }
-        if let Some(widget_win) = app.get_webview_window("widget") {
-            if let Ok(hwnd) = widget_win.hwnd() {
-                let effective_widget_stealth = enable || updated_settings.widget_stealth;
-                let _ = injector::apply_own_window_stealth(hwnd.0 as _, effective_widget_stealth);
-            }
-        }
     }
+    sync_auxiliary_windows_stealth(&app, enable || updated_settings.widget_stealth);
 
     let _ = app.emit("self_shield_changed", enable);
     let _ = app.emit("settings_changed", &updated_settings);
-    let _ = rebuild_tray_menu(&app);
     Ok(enable)
 }
 
@@ -1243,9 +1296,9 @@ fn set_widget_size(app: tauri::AppHandle, width: f64, height: f64) -> Result<(),
 
 fn get_widget_dimensions(style: &str) -> (f64, f64) {
     match style {
-        "dock" => (292.0, 248.0),
+        "dock" => (296.0, 272.0),
         "badge" => (76.0, 76.0),
-        _ => (416.0, 68.0), // "pill"
+        _ => (432.0, 68.0), // "pill"
     }
 }
 
@@ -1318,8 +1371,8 @@ async fn set_widget_badge_expanded(
     let scale = win.scale_factor().unwrap_or(1.0);
     let col_w = (76.0 * scale).round() as i32;
     let col_h = (76.0 * scale).round() as i32;
-    let exp_w = (208.0 * scale).round() as i32;
-    let exp_h = (286.0 * scale).round() as i32;
+    let exp_w = (232.0 * scale).round() as i32;
+    let exp_h = (324.0 * scale).round() as i32;
 
     if expanded {
         let cur_pos = win.outer_position().map_err(|e| e.to_string())?;
@@ -1358,7 +1411,7 @@ async fn set_widget_badge_expanded(
         }
 
         let _ = win.set_position(PhysicalPosition::new(new_x, new_y));
-        let _ = win.set_size(Size::Logical(LogicalSize::new(208.0, 286.0)));
+        let _ = win.set_size(Size::Logical(LogicalSize::new(232.0, 324.0)));
         Ok(dir)
     } else {
         let was_expanded = state.widget_badge_expanded.lock().map(|g| *g).unwrap_or(false);
@@ -1552,6 +1605,28 @@ async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn hide_tray_menu(app: tauri::AppHandle) {
+    hide_tray_menu_internal(&app);
+}
+
+#[tauri::command]
+fn open_main_settings(app: tauri::AppHandle) -> Result<(), String> {
+    hide_tray_menu_internal(&app);
+    create_main_window(&app).map_err(|e| e.to_string())?;
+    let _ = app.emit("open_settings", ());
+    Ok(())
+}
+
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        persist_last_widget_position(&state);
+    }
+    let _ = app.remove_tray_by_id("main");
+    app.exit(0);
+}
+
+#[tauri::command]
 async fn toggle_widget(
     app: tauri::AppHandle,
     enable: Option<bool>,
@@ -1581,11 +1656,9 @@ async fn toggle_widget(
                 save_config(&cfg);
             }
         }
-        let _ = rebuild_tray_menu(&app);
         return Err(e);
     }
 
-    let _ = rebuild_tray_menu(&app);
     let _ = app.emit("widget_state_changed", new_enabled);
     let _ = app.emit("settings_changed", &updated_settings);
     Ok(new_enabled)
@@ -1620,15 +1693,13 @@ fn apply_window_compact_mode(win: &WebviewWindow, compact: bool) -> Result<(), B
 #[tauri::command]
 fn set_compact_mode(app: tauri::AppHandle, compact: bool) -> Result<bool, String> {
     let updated_settings = if let Some(state) = app.try_state::<AppState>() {
-        let settings_opt = if let Ok(mut cfg) = state.config.lock() {
+        if let Ok(mut cfg) = state.config.lock() {
             cfg.settings.compact_mode = compact;
             save_config(&cfg);
             Some(cfg.settings.clone())
         } else {
             None
-        };
-        let _ = rebuild_tray_menu(&app);
-        settings_opt
+        }
     } else {
         None
     };
@@ -1741,11 +1812,12 @@ fn main() {
     tauri::Builder::default()
         .manage(AppState {
             config: Mutex::new(initial_config),
-            tray_status: Mutex::new(None),
             last_widget_pos: Mutex::new(None),
             widget_badge_expanded: Mutex::new(false),
             badge_pre_expand_pos: Mutex::new(None),
             badge_last_dir: Mutex::new(BadgeExpandResult::default()),
+            tray_menu_opened_at: Mutex::new(None),
+            tray_menu_hidden_at: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_windows,
@@ -1773,6 +1845,9 @@ fn main() {
             show_main_window,
             set_widget_size,
             set_widget_badge_expanded,
+            hide_tray_menu,
+            open_main_settings,
+            quit_app,
         ])
         .setup(move |app| {
             let args: Vec<String> = std::env::args().collect();
@@ -1806,8 +1881,10 @@ fn main() {
                 eprintln!("[StreamShield] Initial widget setup error: {}", e);
             }
 
-            // ── Dynamic Tray menu with toggleable options ────────────────
-            let menu = create_tray_menu(app.handle())?;
+            // Pre-warm custom theme-compliant tray popover window so right-click opens instantaneously
+            if let Err(e) = ensure_tray_menu_window(app.handle()) {
+                eprintln!("[StreamShield] Initial tray menu pre-warm warning: {}", e);
+            }
 
             let icon = app
                 .default_window_icon()
@@ -1817,153 +1894,38 @@ fn main() {
             TrayIconBuilder::with_id("main")
                 .icon(icon)
                 .tooltip("StreamShield")
-                .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
+                        button,
                         button_state: MouseButtonState::Up,
+                        position,
                         ..
                     } = event
                     {
                         let app = tray.app_handle();
-                        if let Some(w) = app.get_webview_window("main") {
-                            if w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false) {
-                                let _ = w.hide();
-                            } else {
-                                let _ = create_main_window(app);
-                            }
-                        } else {
-                            let _ = create_main_window(app);
-                        }
-                    }
-                })
-                .on_menu_event(|app, event| {
-                    let id = event.id.as_ref().to_string();
-                    let app_h = app.clone();
-                    match id.as_str() {
-                        "show" => {
-                            let _ = create_main_window(&app_h);
-                        }
-                        "tray_shield_all" => {
-                            tauri::async_runtime::spawn(async move {
-                                let _ = shield_all_windows(app_h.clone()).await;
-                                let _ = app_h.emit("tray_action_completed", "shield_all");
-                            });
-                        }
-                        "tray_unshield_all" => {
-                            tauri::async_runtime::spawn(async move {
-                                let _ = clear_all_shields(app_h.clone()).await;
-                                let _ = app_h.emit("tray_action_completed", "unshield_all");
-                            });
-                        }
-                        "tray_reapply" => {
-                            tauri::async_runtime::spawn(async move {
-                                let _ = reapply_shields(app_h).await;
-                            });
-                        }
-                        "tray_mode_exclude" | "tray_mode_monitor" => {
-                            let new_mode = if id == "tray_mode_exclude" { "exclude" } else { "monitor" };
-                            tauri::async_runtime::spawn_blocking(move || {
-                                let state = app_h.state::<AppState>();
-                                let (exes, auto_reapply) = {
-                                    let mut cfg = match state.config.lock() {
-                                        Ok(c) => c,
-                                        Err(_) => return,
-                                    };
-                                    cfg.settings.shield_mode = new_mode.to_string();
-                                    save_config(&cfg);
-                                    (cfg.shielded_exes.clone(), cfg.settings.auto_reapply)
-                                };
-                                for exe in &exes {
-                                    for (hwnd, _) in window_manager::find_all_windows_for_exe(exe) {
-                                        let _ = injector::set_window_affinity(hwnd, true, Some(new_mode));
-                                    }
-                                }
-                                let wins = window_manager::enumerate_windows(&exes, new_mode, auto_reapply);
-                                rebuild_tray_menu_with_windows(&app_h, &wins);
-                                if let Ok(cfg) = state.config.lock() {
-                                    let _ = app_h.emit("settings_changed", &cfg.settings);
-                                }
-                                let _ = app_h.emit("shield_state_changed", ());
-                                let _ = app_h.emit("tray_action_completed", "mode_changed");
-                            });
-                        }
-                        "tray_toggle_compact" => {
-                            let current = app_h
-                                .try_state::<AppState>()
-                                .and_then(|s| s.config.lock().ok().map(|c| c.settings.compact_mode))
-                                .unwrap_or(false);
-                            let _ = set_compact_mode(app_h.clone(), !current);
-                            let _ = app_h.emit("tray_action_completed", "compact_toggled");
-                        }
-                        "tray_widget_toggle" => {
-                            tauri::async_runtime::spawn(async move {
-                                let _ = toggle_widget(app_h, None, None).await;
-                            });
-                        }
-                        "tray_widget_style_pill" => {
-                            tauri::async_runtime::spawn(async move {
-                                let _ = toggle_widget(app_h, Some(true), Some("pill".to_string())).await;
-                            });
-                        }
-                        "tray_widget_style_dock" => {
-                            tauri::async_runtime::spawn(async move {
-                                let _ = toggle_widget(app_h, Some(true), Some("dock".to_string())).await;
-                            });
-                        }
-                        "tray_widget_style_badge" => {
-                            tauri::async_runtime::spawn(async move {
-                                let _ = toggle_widget(app_h, Some(true), Some("badge".to_string())).await;
-                            });
-                        }
-                        "quit" => {
-                            if let Some(state) = app_h.try_state::<AppState>() {
-                                persist_last_widget_position(&state);
-                            }
-                            let _ = app_h.remove_tray_by_id("main");
-                            app_h.exit(0);
-                        }
-                        other if other.starts_with("toggle_app:") => {
-                            let target_exe = other.trim_start_matches("toggle_app:").to_string();
-                            tauri::async_runtime::spawn_blocking(move || {
-                                let state = app_h.state::<AppState>();
-                                let (mode, new_state) = {
-                                    let cfg = match state.config.lock() {
-                                        Ok(c) => c,
-                                        Err(_) => return,
-                                    };
-                                    let norm = target_exe.to_lowercase();
-                                    (cfg.settings.shield_mode.clone(), !cfg.shielded_exes.contains(&norm))
-                                };
-
-                                let targets = window_manager::find_all_windows_for_exe(&target_exe);
-                                for (hwnd, _) in targets {
-                                    let _ = injector::set_window_affinity(hwnd, new_state, Some(&mode));
-                                }
-
-                                let (exes, auto_reapply) = {
-                                    let mut cfg = match state.config.lock() {
-                                        Ok(c) => c,
-                                        Err(_) => return,
-                                    };
-                                    let norm = target_exe.to_lowercase();
-                                    if new_state {
-                                        cfg.shielded_exes.insert(norm);
+                        match button {
+                            MouseButton::Left => {
+                                hide_tray_menu_internal(app);
+                                if let Some(w) = app.get_webview_window("main") {
+                                    if w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false) {
+                                        let _ = w.hide();
                                     } else {
-                                        cfg.shielded_exes.remove(&norm);
+                                        let _ = create_main_window(app);
                                     }
-                                    save_config(&cfg);
-                                    (cfg.shielded_exes.clone(), cfg.settings.auto_reapply)
-                                };
-
-                                let wins = window_manager::enumerate_windows(&exes, &mode, auto_reapply);
-                                rebuild_tray_menu_with_windows(&app_h, &wins);
-                                let _ = app_h.emit("shield_state_changed", ());
-                                let _ = app_h.emit("tray_action_completed", "app_toggled");
-                            });
+                                } else {
+                                    let _ = create_main_window(app);
+                                }
+                            }
+                            MouseButton::Right => {
+                                show_or_toggle_tray_menu(
+                                    app,
+                                    position.x.round() as i32,
+                                    position.y.round() as i32,
+                                );
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     }
                 })
                 .build(app)?;
@@ -1999,7 +1961,11 @@ fn main() {
             match event {
                 tauri::WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if window.label() == "tray_menu" {
+                        hide_tray_menu_internal(window.app_handle());
+                    } else {
+                        let _ = window.hide();
+                    }
                     if window.label() == "widget" {
                         let app = window.app_handle();
                         if let Some(state) = app.try_state::<AppState>() {
@@ -2011,7 +1977,6 @@ fn main() {
                             } else {
                                 None
                             };
-                            let _ = rebuild_tray_menu(app);
                             let _ = app.emit("widget_state_changed", false);
                             if let Some(s) = updated_settings {
                                 let _ = app.emit("settings_changed", &s);
@@ -2043,6 +2008,21 @@ fn main() {
                             persist_last_widget_position(&state);
                         }
                         let _ = window.emit("widget_blur", ());
+                    } else if window.label() == "tray_menu" {
+                        let app = window.app_handle();
+                        let should_hide = app
+                            .try_state::<AppState>()
+                            .and_then(|state| {
+                                state
+                                    .tray_menu_opened_at
+                                    .lock()
+                                    .ok()
+                                    .map(|g| g.map(|t| t.elapsed().as_millis() >= 180).unwrap_or(true))
+                            })
+                            .unwrap_or(true);
+                        if should_hide {
+                            hide_tray_menu_internal(app);
+                        }
                     }
                 }
                 tauri::WindowEvent::Resized(_) => {
@@ -2068,10 +2048,54 @@ mod tests {
 
     #[test]
     fn test_widget_dimensions() {
-        assert_eq!(get_widget_dimensions("pill"), (416.0, 68.0));
-        assert_eq!(get_widget_dimensions("dock"), (292.0, 248.0));
+        assert_eq!(get_widget_dimensions("pill"), (432.0, 68.0));
+        assert_eq!(get_widget_dimensions("dock"), (296.0, 272.0));
         assert_eq!(get_widget_dimensions("badge"), (76.0, 76.0));
-        assert_eq!(get_widget_dimensions("unknown_style"), (416.0, 68.0));
+        assert_eq!(get_widget_dimensions("unknown_style"), (432.0, 68.0));
+    }
+
+    #[test]
+    fn test_compute_tray_menu_position() {
+        let wa = PhysicalRect {
+            position: PhysicalPosition::new(0, 0),
+            size: PhysicalSize::new(1920, 1032),
+        };
+        // Bottom taskbar right click
+        let (x_b, y_b, orig_b) = compute_tray_menu_position(&wa, 1760, 1055, 312, 516, 6);
+        assert_eq!(orig_b, "bottom");
+        assert_eq!((x_b, y_b), (1476, 510));
+
+        // Top taskbar right click (work_area starts at y=48)
+        let wa_top = PhysicalRect {
+            position: PhysicalPosition::new(0, 48),
+            size: PhysicalSize::new(1920, 1032),
+        };
+        let (x_t, y_t, orig_t) = compute_tray_menu_position(&wa_top, 1760, 22, 312, 516, 6);
+        assert_eq!(orig_t, "top");
+        assert_eq!((x_t, y_t), (1476, 54));
+
+        // Left taskbar right click (work_area starts at x=64)
+        let wa_left = PhysicalRect {
+            position: PhysicalPosition::new(64, 0),
+            size: PhysicalSize::new(1856, 1080),
+        };
+        let (x_l, y_l, orig_l) = compute_tray_menu_position(&wa_left, 30, 800, 312, 516, 6);
+        assert_eq!(orig_l, "left");
+        assert_eq!((x_l, y_l), (70, 542));
+
+        // Right taskbar right click (work_area ends at x=1856)
+        let wa_right = PhysicalRect {
+            position: PhysicalPosition::new(0, 0),
+            size: PhysicalSize::new(1856, 1080),
+        };
+        let (x_r, y_r, orig_r) = compute_tray_menu_position(&wa_right, 1888, 900, 312, 516, 6);
+        assert_eq!(orig_r, "right");
+        assert_eq!((x_r, y_r), (1538, 564));
+
+        // Overflow flyout inside work_area (lower half)
+        let (x_f, y_f, orig_f) = compute_tray_menu_position(&wa, 1680, 920, 312, 516, 6);
+        assert_eq!(orig_f, "bottom");
+        assert_eq!((x_f, y_f), (1392, 398));
     }
 
     #[test]

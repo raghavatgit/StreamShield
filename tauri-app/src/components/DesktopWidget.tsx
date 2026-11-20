@@ -185,6 +185,8 @@ export default function DesktopWidget() {
   const shieldedCount = windows.filter((w) => shieldedExes.has(w.exe_name)).length;
   const allShielded = windows.length > 0 && shieldedCount === windows.length;
   const anyShielded = shieldedCount > 0;
+  const ratio = windows.length > 0 ? shieldedCount / windows.length : 0;
+  const percentage = Math.round(ratio * 100);
 
   const handleToggleApp = async (win: WindowInfo) => {
     if (pendingExes.has(win.exe_name)) return;
@@ -330,7 +332,11 @@ export default function DesktopWidget() {
 
     return (
       <div className="desktop-widget-root pill-mode" onMouseDown={handleDrag}>
-        <div className="widget-pill-container">
+        <div
+          className={`widget-pill-container ${
+            allShielded ? "all-active" : anyShielded ? "has-active" : ""
+          }`}
+        >
           <span className="widget-drag-grip" title="Drag widget">
             <IconGrip size={11} />
           </span>
@@ -340,11 +346,19 @@ export default function DesktopWidget() {
             className="pill-brand-badge no-drag"
             onClick={handleOpenMainWindow}
             onMouseDown={(e) => e.stopPropagation()}
-            title="Click to open StreamShield"
+            title="Open StreamShield"
+            aria-label={`Open StreamShield (${shieldedCount} of ${windows.length} shielded)`}
           >
-            <img src="/logo.png" className="widget-pill-logo" alt="StreamShield" />
-            <span className={`pill-counter-tag ${allShielded ? "all-safe" : anyShielded ? "partial" : ""}`}>
-              {shieldedCount}/{windows.length}
+            <img src="/logo.png" className="widget-pill-logo" alt="" />
+            <span
+              className={`pill-counter-tag ${
+                allShielded ? "all-safe" : anyShielded ? "partial" : ""
+              }`}
+            >
+              <span className="pill-status-dot" aria-hidden="true" />
+              <span>
+                {shieldedCount}/{windows.length}
+              </span>
             </span>
           </button>
 
@@ -359,19 +373,23 @@ export default function DesktopWidget() {
                 return (
                   <button
                     key={`${w.pid}-${w.hwnd}`}
-                    className={`pill-mini-app-tile ${isSh ? "is-shielded" : ""} ${isBusy ? "is-busy" : ""}`}
+                    className={`pill-mini-app-tile ${isSh ? "is-shielded" : ""} ${
+                      isBusy ? "is-busy" : ""
+                    }`}
                     onClick={() => handleToggleApp(w)}
                     onMouseDown={(e) => e.stopPropagation()}
                     disabled={isBusy}
-                    title={`${clean}: ${isSh ? "Protected (Tap to unshield)" : "Open (Tap to shield)"}`}
+                    aria-pressed={isSh}
+                    aria-label={`${clean}: ${isSh ? "Shielded" : "Open"}`}
+                    title={`${clean}: ${isSh ? "Shielded (Tap to unshield)" : "Open (Tap to shield)"}`}
                     type="button"
                   >
                     {w.icon_base64 ? (
-                      <img src={w.icon_base64} alt={clean} className="pill-app-icon" />
+                      <img src={w.icon_base64} alt="" className="pill-app-icon" />
                     ) : (
                       <span className="pill-app-initial">{clean[0]?.toUpperCase() || "?"}</span>
                     )}
-                    {isSh && <span className="pill-mini-shield-dot" />}
+                    {isSh && <span className="pill-shield-bar" aria-hidden="true" />}
                   </button>
                 );
               })
@@ -391,21 +409,29 @@ export default function DesktopWidget() {
 
           <div className="pill-action-cluster" onMouseDown={(e) => e.stopPropagation()}>
             <button
-              className={`pill-master-btn ${allShielded ? "is-active" : anyShielded ? "is-partial" : ""}`}
+              className={`pill-master-btn ${
+                allShielded ? "is-active" : anyShielded ? "is-partial" : ""
+              }`}
               onClick={handleMasterToggle}
               onMouseDown={(e) => e.stopPropagation()}
               disabled={masterBusy || windows.length === 0}
+              aria-pressed={allShielded}
               title={allShielded ? "Unshield all applications" : "Shield all open applications"}
               type="button"
             >
-              <IconShield size={12} />
+              {allShielded ? <IconShieldCheck size={12} /> : <IconShield size={12} />}
             </button>
 
             <button
               className={`pill-eye-btn ${isSelfShielded ? "is-stealth" : ""}`}
               onClick={handleToggleSelfShield}
               onMouseDown={(e) => e.stopPropagation()}
-              title={isSelfShielded ? "App hidden from stream (Click to show)" : "App visible on stream (Click to hide)"}
+              aria-pressed={isSelfShielded}
+              title={
+                isSelfShielded
+                  ? "App hidden from stream (Click to show)"
+                  : "App visible on stream (Click to hide)"
+              }
               type="button"
             >
               {isSelfShielded ? <IconEyeOff size={13} /> : <IconEye size={13} />}
@@ -442,6 +468,10 @@ export default function DesktopWidget() {
     return (
       <div className="desktop-widget-root dock-mode" onMouseDown={handleDrag}>
         <div className="widget-dock-container">
+          <div className="dock-coverage-rail" aria-hidden="true">
+            <div className="dock-coverage-fill" style={{ width: `${percentage}%` }} />
+          </div>
+
           <div className="widget-dock-header">
             <div className="dock-header-drag-group">
               <span className="widget-drag-grip" title="Drag widget">
@@ -456,28 +486,41 @@ export default function DesktopWidget() {
               >
                 <img src="/logo.png" className="widget-dock-logo" alt="StreamShield" />
                 <span className="dock-count-badge">
-                  {shieldedCount}/{windows.length} protected
+                  {shieldedCount}/{windows.length}
+                </span>
+                <span
+                  className={`dock-state-tag ${
+                    allShielded ? "is-all" : anyShielded ? "is-partial" : ""
+                  }`}
+                >
+                  {allShielded ? "ALL" : anyShielded ? "ACTIVE" : "IDLE"}
                 </span>
               </button>
             </div>
 
             <div className="dock-header-right" onMouseDown={(e) => e.stopPropagation()}>
               <button
-                className={`dock-tool-btn ${allShielded ? "is-active" : anyShielded ? "is-partial" : ""}`}
+                className={`dock-tool-btn ${
+                  allShielded ? "is-active" : anyShielded ? "is-partial" : ""
+                }`}
                 onClick={handleMasterToggle}
                 onMouseDown={(e) => e.stopPropagation()}
                 disabled={masterBusy || windows.length === 0}
+                aria-pressed={allShielded}
                 title={allShielded ? "Unshield all" : "Shield all"}
                 type="button"
               >
-                <IconShield size={11} />
+                {allShielded ? <IconShieldCheck size={11} /> : <IconShield size={11} />}
               </button>
 
               <button
                 className={`dock-tool-btn ${isSelfShielded ? "is-stealth" : ""}`}
                 onClick={handleToggleSelfShield}
                 onMouseDown={(e) => e.stopPropagation()}
-                title={isSelfShielded ? "Stealth active (Click to disable)" : "Stealth off (Click to enable)"}
+                aria-pressed={isSelfShielded}
+                title={
+                  isSelfShielded ? "Stealth active (Click to disable)" : "Stealth off (Click to enable)"
+                }
                 type="button"
               >
                 {isSelfShielded ? <IconEyeOff size={12} /> : <IconEye size={12} />}
@@ -516,20 +559,24 @@ export default function DesktopWidget() {
                 return (
                   <button
                     key={`${w.pid}-${w.hwnd}`}
-                    className={`dock-app-tile ${isSh ? "is-shielded" : ""} ${isBusy ? "is-busy" : ""}`}
+                    className={`dock-app-tile ${isSh ? "is-shielded" : ""} ${
+                      isBusy ? "is-busy" : ""
+                    }`}
                     onClick={() => handleToggleApp(w)}
                     onMouseDown={(e) => e.stopPropagation()}
                     disabled={isBusy}
+                    aria-pressed={isSh}
+                    aria-label={`${clean}: ${isSh ? "Shielded" : "Open"}`}
                     title={`${clean}: ${isSh ? "Shielded (Tap to unshield)" : "Open (Tap to shield)"}`}
                     type="button"
                   >
                     {w.icon_base64 ? (
-                      <img src={w.icon_base64} alt={clean} className="dock-app-icon" />
+                      <img src={w.icon_base64} alt="" className="dock-app-icon" />
                     ) : (
                       <span className="dock-app-initial">{clean[0]?.toUpperCase() || "?"}</span>
                     )}
                     {isSh && (
-                      <span className="dock-shield-badge">
+                      <span className="dock-shield-badge" aria-hidden="true">
                         <IconShieldCheck size={9} />
                       </span>
                     )}
@@ -539,13 +586,47 @@ export default function DesktopWidget() {
             </div>
           )}
 
+          <div className="dock-footer-bar" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="widget-mode-switcher" role="group" aria-label="Widget display style">
+              <button
+                type="button"
+                className="widget-mode-btn"
+                onClick={() => handleSwitchStyle("pill")}
+              >
+                Pill
+              </button>
+              <button
+                type="button"
+                className="widget-mode-btn is-selected"
+                onClick={() => handleSwitchStyle("dock")}
+              >
+                Dock
+              </button>
+              <button
+                type="button"
+                className="widget-mode-btn"
+                onClick={() => handleSwitchStyle("badge")}
+              >
+                Badge
+              </button>
+            </div>
+            <span className={`dock-stealth-status ${isSelfShielded ? "is-on" : ""}`}>
+              {isSelfShielded ? "Stealth ON" : "Visible"}
+            </span>
+          </div>
+
           {widgetError && <div className="widget-inline-error dock-error">{widgetError}</div>}
         </div>
       </div>
     );
   }
 
-  // ── 3. CORNER STATUS BADGE MODE ───────────────────────────
+  // ── 3. CORNER STATUS BADGE MODE (ORBITAL TELEMETRY RING) ─
+  const ringRadius = 24.5;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const ringDashOffset = ringCircumference * (1 - ratio);
+  const badgeQuickWins = windows.slice(0, 5);
+
   const badgeClasses = [
     "desktop-widget-root",
     "badge-mode",
@@ -560,7 +641,9 @@ export default function DesktopWidget() {
     <div className={badgeClasses} onMouseDown={handleDrag}>
       <button
         type="button"
-        className={`widget-badge-circle no-drag ${allShielded ? "is-all" : anyShielded ? "is-partial" : ""}`}
+        className={`widget-badge-circle no-drag ${
+          allShielded ? "is-all" : anyShielded ? "is-partial" : ""
+        }`}
         onPointerDown={handleBadgePointerDown}
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
@@ -569,54 +652,149 @@ export default function DesktopWidget() {
             toggleBadgeExpanded();
           }
         }}
+        aria-expanded={badgeExpanded}
+        aria-label={`StreamShield Badge: ${shieldedCount} of ${windows.length} protected`}
         title="StreamShield Badge (Click for controls • Drag to move)"
       >
-        <img src="/logo.png" className="widget-badge-logo" alt="StreamShield" />
-        <span className="badge-count-pill">{shieldedCount}</span>
+        <svg className="badge-progress-ring" viewBox="0 0 56 56" aria-hidden="true">
+          <defs>
+            <linearGradient id="ss-badge-ring" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style={{ stopColor: "var(--primary)" }} />
+              <stop offset="100%" style={{ stopColor: "var(--accent)" }} />
+            </linearGradient>
+          </defs>
+          <circle cx="28" cy="28" r={ringRadius} className="badge-ring-track" />
+          <circle
+            cx="28"
+            cy="28"
+            r={ringRadius}
+            className="badge-ring-fill"
+            stroke="url(#ss-badge-ring)"
+            strokeDasharray={ringCircumference}
+            strokeDashoffset={ringDashOffset}
+          />
+        </svg>
+
+        <img src="/logo.png" className="widget-badge-logo" alt="" />
+        <span className={`badge-count-pill ${shieldedCount === 0 ? "is-idle" : ""}`}>
+          {shieldedCount}
+        </span>
       </button>
 
       {badgeExpanded && (
-        <div className="badge-quick-popover" onMouseDown={(e) => e.stopPropagation()}>
-          <button
-            className="badge-popover-item"
-            onClick={handleMasterToggle}
-            onMouseDown={(e) => e.stopPropagation()}
-            disabled={masterBusy || windows.length === 0}
-            type="button"
-          >
-            <IconShield size={13} />
-            <span>{allShielded ? "Clear All" : "Shield All"}</span>
-          </button>
+        <div
+          className="badge-quick-popover"
+          role="dialog"
+          aria-label="StreamShield Badge Quick Controls"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="badge-popover-rail" aria-hidden="true">
+            <div className="badge-popover-fill" style={{ width: `${percentage}%` }} />
+          </div>
 
-          <button
-            className={`badge-popover-item ${isSelfShielded ? "stealth-active" : ""}`}
-            onClick={handleToggleSelfShield}
-            onMouseDown={(e) => e.stopPropagation()}
-            type="button"
-          >
-            {isSelfShielded ? <IconEyeOff size={13} /> : <IconEye size={13} />}
-            <span>Stealth: {isSelfShielded ? "ON" : "OFF"}</span>
-          </button>
+          <div className="badge-popover-header">
+            <span className="badge-popover-ratio">
+              {shieldedCount}/{windows.length} Protected
+            </span>
+            <span className={`badge-popover-stealth ${isSelfShielded ? "is-on" : ""}`}>
+              {isSelfShielded ? "Stealth" : "Visible"}
+            </span>
+          </div>
 
-          <button
-            className="badge-popover-item"
-            onClick={() => handleSwitchStyle("pill")}
-            onMouseDown={(e) => e.stopPropagation()}
-            type="button"
-          >
-            <IconGrip size={13} />
-            <span>Switch to Pill</span>
-          </button>
+          <div className="badge-action-row">
+            <button
+              className={`badge-action-chip ${allShielded ? "is-active" : ""}`}
+              onClick={handleMasterToggle}
+              onMouseDown={(e) => e.stopPropagation()}
+              disabled={masterBusy || windows.length === 0}
+              type="button"
+              title={allShielded ? "Clear all shields" : "Shield all open apps"}
+            >
+              {allShielded ? <IconShieldCheck size={13} /> : <IconShield size={13} />}
+              <span>{allShielded ? "Clear" : "Shield"}</span>
+            </button>
 
-          <button
-            className="badge-popover-item"
-            onClick={handleOpenMainWindow}
-            onMouseDown={(e) => e.stopPropagation()}
-            type="button"
-          >
-            <IconExternalLink size={13} />
-            <span>Open Window</span>
-          </button>
+            <button
+              className={`badge-action-chip ${isSelfShielded ? "is-active" : ""}`}
+              onClick={handleToggleSelfShield}
+              onMouseDown={(e) => e.stopPropagation()}
+              type="button"
+              aria-pressed={isSelfShielded}
+              title={isSelfShielded ? "Disable self stealth" : "Enable self stealth"}
+            >
+              {isSelfShielded ? <IconEyeOff size={13} /> : <IconEye size={13} />}
+              <span>Stealth</span>
+            </button>
+
+            <button
+              className="badge-action-chip"
+              onClick={handleOpenMainWindow}
+              onMouseDown={(e) => e.stopPropagation()}
+              type="button"
+              title="Open full StreamShield window"
+            >
+              <IconExternalLink size={13} />
+              <span>Open</span>
+            </button>
+          </div>
+
+          {badgeQuickWins.length > 0 && (
+            <div className="badge-apps-strip">
+              {badgeQuickWins.map((w) => {
+                const isSh = shieldedExes.has(w.exe_name);
+                const isBusy = pendingExes.has(w.exe_name);
+                const clean = w.exe_name.replace(/\.exe$/i, "");
+                return (
+                  <button
+                    key={`${w.pid}-${w.hwnd}`}
+                    type="button"
+                    className={`badge-mini-app ${isSh ? "is-shielded" : ""} ${
+                      isBusy ? "is-busy" : ""
+                    }`}
+                    onClick={() => handleToggleApp(w)}
+                    disabled={isBusy}
+                    aria-pressed={isSh}
+                    title={`${clean}: ${isSh ? "Shielded" : "Open"}`}
+                  >
+                    {w.icon_base64 ? (
+                      <img src={w.icon_base64} alt="" className="badge-mini-app-icon" />
+                    ) : (
+                      <span className="badge-mini-app-initial">
+                        {clean[0]?.toUpperCase() || "?"}
+                      </span>
+                    )}
+                    {isSh && <span className="badge-mini-app-bar" aria-hidden="true" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="widget-mode-switcher badge-modes" role="group" aria-label="Widget style">
+            <button
+              type="button"
+              className="widget-mode-btn"
+              onClick={() => handleSwitchStyle("pill")}
+            >
+              Pill
+            </button>
+            <button
+              type="button"
+              className="widget-mode-btn"
+              onClick={() => handleSwitchStyle("dock")}
+            >
+              Dock
+            </button>
+            <button
+              type="button"
+              className="widget-mode-btn is-selected"
+              onClick={() => handleSwitchStyle("badge")}
+            >
+              Badge
+            </button>
+          </div>
+
+          <hr className="widget-menu-sep" />
 
           <button
             className="badge-popover-item close"
@@ -624,7 +802,7 @@ export default function DesktopWidget() {
             onMouseDown={(e) => e.stopPropagation()}
             type="button"
           >
-            <IconClose size={13} />
+            <IconClose size={12} />
             <span>Hide Widget</span>
           </button>
 

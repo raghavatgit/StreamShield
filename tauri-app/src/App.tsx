@@ -257,6 +257,10 @@ export default function App() {
       if (s.self_stealth !== undefined) setIsSelfShielded(s.self_stealth);
     });
 
+    const unlistenOpenSettings = listen("open_settings", () => {
+      setSettingsOpen(true);
+    });
+
     return () => {
       if (toastTimer.current) clearTimeout(toastTimer.current);
       window.removeEventListener("focus", onFocus);
@@ -270,6 +274,7 @@ export default function App() {
       unlistenShield.then((unlisten) => unlisten());
       unlistenSelfShield.then((unlisten) => unlisten());
       unlistenSettings.then((unlisten) => unlisten());
+      unlistenOpenSettings.then((unlisten) => unlisten());
     };
   }, [loadWindows, loadSettings, showToast]);
 
