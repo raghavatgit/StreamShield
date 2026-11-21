@@ -1,6 +1,6 @@
 {
   "productName": "StreamShield",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "identifier": "com.streamshield",
   "build": {
     "frontendDist": "../dist",
@@ -27,6 +27,18 @@
       "icons/128x128@2x.png",
       "icons/icon.ico",
       "icons/icon.png"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "sidebarImage": "icons/nsis-sidebar.bmp",
+        "headerImage": "icons/nsis-header.bmp",
+        "displayLanguageSelector": false
+      },
+      "wix": {
+        "bannerPath": "icons/wix-banner.bmp",
+        "dialogImagePath": "icons/wix-dialog.bmp"
+      }
+    }
   }
 }

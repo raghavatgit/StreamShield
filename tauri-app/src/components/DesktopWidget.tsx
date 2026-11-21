@@ -400,7 +400,7 @@ export default function DesktopWidget() {
                 className="pill-overflow-badge no-drag"
                 onClick={handleOpenMainWindow}
                 onMouseDown={(e) => e.stopPropagation()}
-                title={`${overflowCount} more open app(s) — Open full window`}
+                title={`${overflowCount} more open app(s) - Open full window`}
               >
                 +{overflowCount}
               </button>

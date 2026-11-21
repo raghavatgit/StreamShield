@@ -2,6 +2,22 @@
 
 All notable changes to StreamShield are documented in this file.
 
+## [0.2.6] - 2026-11-21
+### Added & Improved
+- **True Per-App Stream Audio Isolation**:
+  - Added per-app audio shielding powered by `IAudioPolicyConfigFactory::SetPersistedDefaultAudioEndpoint` and a built-in low-latency WASAPI loopback bridge (`audio_manager.rs`).
+  - Route stream-isolated apps directly to your personal headphones while non-isolated apps play through your virtual stream bus (e.g. VB-Cable / VoiceMeeter), so viewers never hear private audio while you still hear everything normally.
+  - Added per-app audio shield buttons across the main window, compact view, and tray popover, plus Stream Bus / Headphones device selectors in Preferences (`Protection` tab) and automatic Panic Mute fallback when isolation is disabled.
+- **Decluttered Preferences & Responsive UI/UX**:
+  - Streamlined Preferences from 5 tabs into 3 focused tabs (`General`, `Protection`, `Appearance`).
+  - Made the main window and modal scalable with a responsive multi-column card grid on wider viewports (`>= 780px`), unified 14px alignment, rounded pill switches, optimistic toggles, and keyboard shortcuts (`Ctrl+K`, `/`, `Ctrl+R`, `Esc`).
+  - Replaced heavy blur filters with lightweight radial gradients and CSS containment (`contain: layout style paint`, `content-visibility: auto`) for snappier rendering.
+- **Widget & Tray Shadow Polish**:
+  - Calibrated `--widget-shadow` and added transparent outer padding across `pill`, `dock`, `badge`, and `tray_menu` windows so drop shadows render cleanly without edge clipping.
+- **Centered Taskbar Icon & Custom-Branded Installers**:
+  - Updated `generate_icons.ps1` to trim asymmetric transparent bounds and mathematically center `icon.ico`, all Tauri PNG icons, and `public/logo.png`.
+  - Added custom-branded 24-bit NSIS and WiX installer bitmaps (`nsis-sidebar.bmp`, `nsis-header.bmp`, `wix-dialog.bmp`, `wix-banner.bmp`).
+
 ## [0.2.5] - 2026-11-20
 ### Added & Improved
 - **Theme-Compliant Custom Tray Right-Click Popover (`tray_menu`)**:

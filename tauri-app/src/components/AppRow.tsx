@@ -1,5 +1,5 @@
 import React from "react";
-import { IconShieldCheck } from "./Icons";
+import { IconShieldCheck, IconVolume, IconVolumeOff } from "./Icons";
 
 export interface WindowInfo {
   hwnd: number;
@@ -7,13 +7,16 @@ export interface WindowInfo {
   title: string;
   exe_name: string;
   is_shielded: boolean;
+  is_audio_muted?: boolean;
   icon_base64?: string | null;
 }
 
 interface Props {
   window: WindowInfo;
   shielded: boolean;
+  audioMuted?: boolean;
   onToggle: (w: WindowInfo, e: boolean) => void;
+  onToggleAudio?: (w: WindowInfo, mute: boolean) => void;
   compactMode?: boolean;
   showPid?: boolean;
 }
@@ -34,7 +37,9 @@ function getFallbackGradient(name: string): { bg: string; color: string } {
 export default React.memo(function AppRow({
   window: win,
   shielded,
+  audioMuted = false,
   onToggle,
+  onToggleAudio,
   compactMode = false,
   showPid = true,
 }: Props) {
@@ -84,8 +89,8 @@ export default React.memo(function AppRow({
       id={`app-row-${win.pid}-${win.hwnd}`}
       onClick={(e) => {
         const target = e.target as HTMLElement;
-        // Skip if click originated inside the toggle switch area (prevents double-fire)
-        if (target.tagName === "INPUT" || target.closest(".switch-wrapper")) {
+        // Skip if click originated inside the action controls area (prevents double-fire)
+        if (target.tagName === "INPUT" || target.closest(".row-action-controls")) {
           return;
         }
         onToggle(win, !shielded);
@@ -127,20 +132,35 @@ export default React.memo(function AppRow({
         </div>
       </div>
 
-      {/* Squircle Display Capture Toggle */}
-      <div className="switch-wrapper" onClick={(e) => e.stopPropagation()}>
-        <label className="toggle-control" htmlFor={`toggle-${win.hwnd}`}>
-          <input
-            id={`toggle-${win.hwnd}`}
-            type="checkbox"
-            checked={shielded}
-            onChange={(e) => onToggle(win, e.target.checked)}
-            aria-label={`Toggle shield for ${cleanName}`}
-          />
-          <span className="toggle-rail">
-            <span className="toggle-knob" />
-          </span>
-        </label>
+      {/* Row Action Controls: Audio Isolation + Capture Shield Switch */}
+      <div className="row-action-controls" onClick={(e) => e.stopPropagation()}>
+        {onToggleAudio && (
+          <button
+            type="button"
+            className={`audio-privacy-btn ${audioMuted ? "is-active" : ""}`}
+            onClick={() => onToggleAudio(win, !audioMuted)}
+            aria-pressed={audioMuted}
+            aria-label={audioMuted ? `Unmute ${cleanName} audio` : `Mute ${cleanName} audio`}
+            title={audioMuted ? `Audio muted (Click to unmute ${cleanName})` : `Isolate / mute ${cleanName} audio`}
+          >
+            {audioMuted ? <IconVolumeOff size={13} /> : <IconVolume size={13} />}
+          </button>
+        )}
+
+        <div className="switch-wrapper">
+          <label className="toggle-control" htmlFor={`toggle-${win.hwnd}`}>
+            <input
+              id={`toggle-${win.hwnd}`}
+              type="checkbox"
+              checked={shielded}
+              onChange={(e) => onToggle(win, e.target.checked)}
+              aria-label={`Toggle shield for ${cleanName}`}
+            />
+            <span className="toggle-rail">
+              <span className="toggle-knob" />
+            </span>
+          </label>
+        </div>
       </div>
     </div>
   );

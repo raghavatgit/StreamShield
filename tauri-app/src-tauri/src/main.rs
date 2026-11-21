@@ -5,6 +5,7 @@ mod window_manager;
 mod injector;
 mod config;
 mod nvidia_bypass;
+mod audio_manager;
 
 use std::sync::Mutex;
 use std::time::Instant;
@@ -22,8 +23,8 @@ use config::{load_config, save_config, AppSettings, ShieldConfig};
 /// otherwise secondary WebView2 creation fails with HRESULT 0x8007139F (ERROR_INVALID_STATE).
 const WEBVIEW_BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows";
 
-const TRAY_MENU_WIDTH: f64 = 312.0;
-const TRAY_MENU_HEIGHT: f64 = 516.0;
+const TRAY_MENU_WIDTH: f64 = 324.0;
+const TRAY_MENU_HEIGHT: f64 = 528.0;
 
 #[derive(Debug, Clone, Copy, Serialize, Default)]
 struct BadgeExpandResult {
@@ -503,10 +504,10 @@ fn get_autostart_registry() -> bool {
 fn update_tray_tooltip(app: &tauri::AppHandle, active_count: usize) {
     if let Some(tray) = app.tray_by_id("main") {
         let tip = if active_count == 0 {
-            "StreamShield — Idle".to_string()
+            "StreamShield - Idle".to_string()
         } else {
             format!(
-                "StreamShield — {} app{} shielded",
+                "StreamShield - {} app{} shielded",
                 active_count,
                 if active_count == 1 { "" } else { "s" }
             )
@@ -743,25 +744,113 @@ fn get_os_info() -> OsInfo {
 async fn get_windows(app: tauri::AppHandle) -> Vec<WindowInfo> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        let (shielded, mode, auto_reapply) = state
+        let (shielded, muted_cfg, mode, auto_reapply) = state
             .config
             .lock()
             .map(|c| {
                 (
                     c.shielded_exes.clone(),
+                    c.muted_exes.clone(),
                     c.settings.shield_mode.clone(),
                     c.settings.auto_reapply,
                 )
             })
             .unwrap_or_default();
 
-        let wins = window_manager::enumerate_windows(&shielded, &mode, auto_reapply);
+        let mut wins = window_manager::enumerate_windows(&shielded, &mode, auto_reapply);
+        let live_muted = audio_manager::get_muted_exes();
+        for w in &mut wins {
+            let lower = w.exe_name.to_lowercase();
+            w.is_audio_muted = live_muted.contains(&lower) || muted_cfg.contains(&lower);
+        }
         let active_count = wins.iter().filter(|w| w.is_shielded).count();
         update_tray_tooltip(&app, active_count);
         wins
     })
     .await
     .unwrap_or_default()
+}
+
+#[tauri::command]
+async fn get_audio_devices() -> Vec<audio_manager::AudioDeviceInfo> {
+    tauri::async_runtime::spawn_blocking(audio_manager::list_audio_output_devices)
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+async fn toggle_audio_mute(
+    app: tauri::AppHandle,
+    exe_name: String,
+    pid: u32,
+    mute: bool,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (iso_enabled, monitor_dev) = state
+            .config
+            .lock()
+            .map(|c| {
+                (
+                    c.settings.audio_isolation_enabled,
+                    c.settings.audio_monitor_device_id.clone(),
+                )
+            })
+            .unwrap_or((false, None));
+
+        if iso_enabled {
+            if let Some(ref dev_id) = monitor_dev {
+                if !dev_id.is_empty() {
+                    // True Stream Audio Isolation: route isolated app directly to user's headphones
+                    // (bypassing Default Stream Bus), or restore to Default when un-isolated.
+                    let target_dev = if mute { Some(dev_id.as_str()) } else { None };
+                    audio_manager::route_app_audio_endpoint(&exe_name, pid, target_dev)?;
+                } else {
+                    audio_manager::set_app_audio_mute(&exe_name, pid, mute)?;
+                }
+            } else {
+                audio_manager::set_app_audio_mute(&exe_name, pid, mute)?;
+            }
+        } else {
+            // Fallback: Panic Mute when Stream Audio Isolation is not enabled
+            audio_manager::set_app_audio_mute(&exe_name, pid, mute)?;
+        }
+
+        {
+            let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
+            let norm = exe_name.to_lowercase();
+            if mute {
+                cfg.muted_exes.insert(norm);
+            } else {
+                cfg.muted_exes.remove(&norm);
+            }
+            save_config(&cfg);
+        }
+
+        let _ = app.emit("audio_state_changed", ());
+        Ok(mute)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn unmute_all_audio(app: tauri::AppHandle) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let exes = {
+            let mut cfg = state.config.lock().map_err(|e| e.to_string())?;
+            let prev = cfg.muted_exes.clone();
+            cfg.muted_exes.clear();
+            save_config(&cfg);
+            prev
+        };
+        let count = audio_manager::unmute_all_exes(&exes)?;
+        let _ = app.emit("audio_state_changed", ());
+        Ok(count)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1041,6 +1130,11 @@ async fn update_settings(mut settings: AppSettings, app: tauri::AppHandle) -> Re
         }
 
         open_or_update_widget(&app)?;
+        audio_manager::sync_audio_bridge(
+            settings.audio_isolation_enabled,
+            settings.audio_stream_device_id.clone(),
+            settings.audio_monitor_device_id.clone(),
+        );
 
         let _ = app.emit("settings_changed", &settings);
         Ok(settings)
@@ -1296,9 +1390,9 @@ fn set_widget_size(app: tauri::AppHandle, width: f64, height: f64) -> Result<(),
 
 fn get_widget_dimensions(style: &str) -> (f64, f64) {
     match style {
-        "dock" => (296.0, 272.0),
-        "badge" => (76.0, 76.0),
-        _ => (432.0, 68.0), // "pill"
+        "dock" => (316.0, 292.0),
+        "badge" => (92.0, 92.0),
+        _ => (452.0, 82.0), // "pill"
     }
 }
 
@@ -1369,10 +1463,10 @@ async fn set_widget_badge_expanded(
     };
 
     let scale = win.scale_factor().unwrap_or(1.0);
-    let col_w = (76.0 * scale).round() as i32;
-    let col_h = (76.0 * scale).round() as i32;
-    let exp_w = (232.0 * scale).round() as i32;
-    let exp_h = (324.0 * scale).round() as i32;
+    let col_w = (92.0 * scale).round() as i32;
+    let col_h = (92.0 * scale).round() as i32;
+    let exp_w = (248.0 * scale).round() as i32;
+    let exp_h = (344.0 * scale).round() as i32;
 
     if expanded {
         let cur_pos = win.outer_position().map_err(|e| e.to_string())?;
@@ -1411,7 +1505,7 @@ async fn set_widget_badge_expanded(
         }
 
         let _ = win.set_position(PhysicalPosition::new(new_x, new_y));
-        let _ = win.set_size(Size::Logical(LogicalSize::new(232.0, 324.0)));
+        let _ = win.set_size(Size::Logical(LogicalSize::new(248.0, 344.0)));
         Ok(dir)
     } else {
         let was_expanded = state.widget_badge_expanded.lock().map(|g| *g).unwrap_or(false);
@@ -1421,7 +1515,7 @@ async fn set_widget_badge_expanded(
         let dir = state.badge_last_dir.lock().map(|g| *g).unwrap_or_default();
         let anchor_opt = state.badge_pre_expand_pos.lock().ok().and_then(|mut g| g.take());
 
-        let _ = win.set_size(Size::Logical(LogicalSize::new(76.0, 76.0)));
+        let _ = win.set_size(Size::Logical(LogicalSize::new(92.0, 92.0)));
         if was_expanded {
             if let Some((ax, ay)) = anchor_opt {
                 let _ = win.set_position(PhysicalPosition::new(ax, ay));
@@ -1619,6 +1713,7 @@ fn open_main_settings(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
+    audio_manager::sync_audio_bridge(false, None, None);
     if let Some(state) = app.try_state::<AppState>() {
         persist_last_widget_position(&state);
     }
@@ -1848,6 +1943,9 @@ fn main() {
             hide_tray_menu,
             open_main_settings,
             quit_app,
+            get_audio_devices,
+            toggle_audio_mute,
+            unmute_all_audio,
         ])
         .setup(move |app| {
             let args: Vec<String> = std::env::args().collect();
@@ -1879,6 +1977,17 @@ fn main() {
             // Restore desktop widget if configured to be enabled
             if let Err(e) = open_or_update_widget(app.handle()) {
                 eprintln!("[StreamShield] Initial widget setup error: {}", e);
+            }
+
+            // Start WASAPI loopback audio bridge if Stream Audio Isolation is configured
+            if let Some(state) = app.try_state::<AppState>() {
+                if let Ok(cfg) = state.config.lock() {
+                    audio_manager::sync_audio_bridge(
+                        cfg.settings.audio_isolation_enabled,
+                        cfg.settings.audio_stream_device_id.clone(),
+                        cfg.settings.audio_monitor_device_id.clone(),
+                    );
+                }
             }
 
             // Pre-warm custom theme-compliant tray popover window so right-click opens instantaneously
@@ -2048,10 +2157,10 @@ mod tests {
 
     #[test]
     fn test_widget_dimensions() {
-        assert_eq!(get_widget_dimensions("pill"), (432.0, 68.0));
-        assert_eq!(get_widget_dimensions("dock"), (296.0, 272.0));
-        assert_eq!(get_widget_dimensions("badge"), (76.0, 76.0));
-        assert_eq!(get_widget_dimensions("unknown_style"), (432.0, 68.0));
+        assert_eq!(get_widget_dimensions("pill"), (452.0, 82.0));
+        assert_eq!(get_widget_dimensions("dock"), (316.0, 292.0));
+        assert_eq!(get_widget_dimensions("badge"), (92.0, 92.0));
+        assert_eq!(get_widget_dimensions("unknown_style"), (452.0, 82.0));
     }
 
     #[test]

@@ -31,6 +31,7 @@ export type { ThemeType };
 export default function App() {
   const [windows, setWindows] = useState<WindowInfo[]>([]);
   const [shieldedExes, setShieldedExes] = useState<Set<string>>(new Set());
+  const [mutedExes, setMutedExes] = useState<Set<string>>(new Set());
   const [isSelfShielded, setIsSelfShielded] = useState(false);
   const [search, setSearch] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "shielded" | "unshielded">("all");
@@ -68,6 +69,7 @@ export default function App() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastIdRef = useRef<number>(0);
   const lastLoadTime = useRef<number>(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -162,12 +164,17 @@ export default function App() {
       setWindows(wins);
 
       const activeShielded = new Set<string>();
+      const activeMuted = new Set<string>();
       for (const w of wins) {
         if (w.is_shielded) {
           activeShielded.add(w.exe_name);
         }
+        if (w.is_audio_muted) {
+          activeMuted.add(w.exe_name);
+        }
       }
       setShieldedExes(activeShielded);
+      setMutedExes(activeMuted);
     } catch (e) {
       console.error(e);
     } finally {
@@ -203,7 +210,36 @@ export default function App() {
       }
     };
     const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        return;
+      }
+      if (
+        e.key === "/" &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !(document.activeElement instanceof HTMLInputElement) &&
+        !(document.activeElement instanceof HTMLTextAreaElement) &&
+        !(document.activeElement instanceof HTMLSelectElement)
+      ) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        setRefreshing(true);
+        loadWindows(true);
+        return;
+      }
       if (e.key === "Escape") {
+        if (document.activeElement === searchInputRef.current) {
+          setSearch("");
+          searchInputRef.current?.blur();
+        }
         setThemeMenuOpen(false);
         setBatchConfirmState(null);
       }
@@ -246,6 +282,10 @@ export default function App() {
       loadWindows(true);
     });
 
+    const unlistenAudio = listen("audio_state_changed", () => {
+      loadWindows(true);
+    });
+
     const unlistenSelfShield = listen<boolean>("self_shield_changed", (event) => {
       setIsSelfShielded(event.payload);
     });
@@ -272,6 +312,7 @@ export default function App() {
       unlistenCompact.then((unlisten) => unlisten());
       unlistenWidget.then((unlisten) => unlisten());
       unlistenShield.then((unlisten) => unlisten());
+      unlistenAudio.then((unlisten) => unlisten());
       unlistenSelfShield.then((unlisten) => unlisten());
       unlistenSettings.then((unlisten) => unlisten());
       unlistenOpenSettings.then((unlisten) => unlisten());
@@ -291,11 +332,13 @@ export default function App() {
 
   const handleToggleWidget = async () => {
     const next = !settings.widget_enabled;
+    setSettings((prev) => ({ ...prev, widget_enabled: next }));
     try {
       const result = await invoke<boolean>("toggle_widget", { enable: next });
       setSettings((prev) => ({ ...prev, widget_enabled: result }));
       showToast(result ? "Desktop Widget enabled" : "Desktop Widget hidden", "info");
     } catch (e) {
+      setSettings((prev) => ({ ...prev, widget_enabled: !next }));
       showToast(formatBackendError(e), "error");
     }
   };
@@ -348,14 +391,17 @@ export default function App() {
   };
 
   const handleClearAllShields = async () => {
+    const prevShielded = new Set(shieldedExes);
+    setShieldedExes(new Set());
+    setWindows((prev) => prev.map((w) => ({ ...w, is_shielded: false })));
     try {
       await invoke("clear_all_shields");
-      setShieldedExes(new Set());
-      setWindows((prev) => prev.map((w) => ({ ...w, is_shielded: false })));
       showToast("All applications unshielded", "info");
       await loadWindows(true);
     } catch (e) {
+      setShieldedExes(prevShielded);
       showToast(formatBackendError(e), "error");
+      await loadWindows(true);
     }
   };
 
@@ -406,16 +452,45 @@ export default function App() {
     [showToast]
   );
 
+  const handleToggleAudio = useCallback(
+    async (win: WindowInfo, mute: boolean) => {
+      setMutedExes((prev) => {
+        const next = new Set(prev);
+        if (mute) next.add(win.exe_name);
+        else next.delete(win.exe_name);
+        return next;
+      });
+      try {
+        await invoke<boolean>("toggle_audio_mute", {
+          exeName: win.exe_name,
+          pid: win.pid,
+          mute,
+        });
+        showToast(mute ? `Muted ${win.exe_name} audio` : `Unmuted ${win.exe_name} audio`, mute ? "success" : "info");
+      } catch (e) {
+        setMutedExes((prev) => {
+          const next = new Set(prev);
+          if (mute) next.delete(win.exe_name);
+          else next.add(win.exe_name);
+          return next;
+        });
+        showToast(formatBackendError(e), "error");
+      }
+    },
+    [showToast]
+  );
+
   const handleToggleSelfShield = async () => {
     const next = !isSelfShielded;
+    setIsSelfShielded(next);
     try {
       await invoke<boolean>("toggle_self_shield", { enable: next });
-      setIsSelfShielded(next);
       showToast(
         next ? "StreamShield app is now hidden from streams" : "StreamShield app is now visible on streams",
         next ? "success" : "info"
       );
     } catch (e) {
+      setIsSelfShielded(!next);
       showToast(formatBackendError(e), "error");
     }
   };
@@ -462,6 +537,9 @@ export default function App() {
 
   const handleShieldAll = async () => {
     if (windows.length === 0) return;
+    const prevShielded = new Set(shieldedExes);
+    setShieldedExes(new Set(windows.map((w) => w.exe_name)));
+    setWindows((prev) => prev.map((w) => ({ ...w, is_shielded: true })));
     try {
       const count = await invoke<number>("shield_all_windows");
       await loadWindows(true);
@@ -470,6 +548,7 @@ export default function App() {
         "success"
       );
     } catch (e) {
+      setShieldedExes(prevShielded);
       showToast(formatBackendError(e), "error");
       await loadWindows(true);
     }
@@ -830,16 +909,19 @@ export default function App() {
           <div className="search-input-shell">
             <IconSearch size={14} className="search-input-icon" />
             <input
+              ref={searchInputRef}
               className="search-text-input"
               type="text"
               placeholder="Search processes or windows..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            {search && (
-              <button type="button" className="search-clear-cross" onClick={() => setSearch("")}>
+            {search ? (
+              <button type="button" className="search-clear-cross" onClick={() => setSearch("")} aria-label="Clear search">
                 <IconClose size={12} />
               </button>
+            ) : (
+              <kbd className="search-kbd-hint" aria-hidden="true">Ctrl K</kbd>
             )}
           </div>
 
@@ -898,7 +980,9 @@ export default function App() {
                 key={`${win.pid}-${win.hwnd}`}
                 window={win}
                 shielded={shieldedExes.has(win.exe_name)}
+                audioMuted={mutedExes.has(win.exe_name)}
                 onToggle={handleToggle}
+                onToggleAudio={handleToggleAudio}
                 compactMode={settings.compact_mode}
                 showPid={settings.show_pid}
               />
@@ -910,6 +994,9 @@ export default function App() {
       {/* Bottom Footer (Full Mode Only) */}
       {!settings.compact_mode && (
         <footer className="app-bottom-footer">
+          <div className="footer-coverage-rail" aria-hidden="true">
+            <div className="footer-coverage-fill" style={{ width: `${percentage}%` }} />
+          </div>
           <div className="footer-coverage-indicator">
             <div className="coverage-bar-track">
               <div className="coverage-bar-value" style={{ width: `${percentage}%` }} />
@@ -924,13 +1011,14 @@ export default function App() {
               type="button"
               className={`self-stealth-toggle-btn ${isSelfShielded ? "is-active" : ""}`}
               onClick={handleToggleSelfShield}
+              aria-pressed={isSelfShielded}
               title={
                 isSelfShielded
                   ? "StreamShield is hidden from capture"
                   : "Hide StreamShield window itself from screen capture"
               }
             >
-              <span className="stealth-indicator-dot" />
+              {isSelfShielded ? <IconEyeOff size={13} /> : <IconEye size={13} />}
               <span className="stealth-label">Stealth: {isSelfShielded ? "ON" : "OFF"}</span>
             </button>
           </div>

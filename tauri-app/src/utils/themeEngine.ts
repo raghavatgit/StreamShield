@@ -177,7 +177,7 @@ export function applyDynamicTheme(themeId: ThemeType) {
     root.style.setProperty("--widget-specular", "rgba(255, 255, 255, 0.95)");
     root.style.setProperty(
       "--widget-shadow",
-      `0 12px 28px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(${pr}, ${pg}, ${pb}, 0.10)`
+      `0 6px 14px rgba(15, 23, 42, 0.14), 0 2px 4px rgba(15, 23, 42, 0.08)`
     );
     root.style.setProperty("--widget-tile-bg", "rgba(15, 23, 42, 0.045)");
     root.style.setProperty("--widget-tile-hover", "rgba(15, 23, 42, 0.09)");
@@ -240,7 +240,7 @@ export function applyDynamicTheme(themeId: ThemeType) {
     root.style.setProperty("--widget-specular", "rgba(255, 255, 255, 0.14)");
     root.style.setProperty(
       "--widget-shadow",
-      `0 12px 30px rgba(0, 0, 0, 0.62), 0 2px 8px rgba(0, 0, 0, 0.44), 0 0 18px rgba(${pr}, ${pg}, ${pb}, 0.18)`
+      `0 6px 15px rgba(0, 0, 0, 0.52), 0 2px 5px rgba(0, 0, 0, 0.36), 0 0 10px rgba(${pr}, ${pg}, ${pb}, 0.14)`
     );
     root.style.setProperty("--widget-tile-bg", "rgba(255, 255, 255, 0.048)");
     root.style.setProperty("--widget-tile-hover", "rgba(255, 255, 255, 0.11)");

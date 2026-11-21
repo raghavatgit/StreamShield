@@ -87,7 +87,7 @@ Download **`streamshield.exe`** from the [Latest Releases](https://github.com/ra
 - **No installation needed** - simply double-click and run!
 
 ### Option 2: Windows Installer
-Download **`StreamShield_0.2.5_x64-setup.exe`** for a standard Windows installation with Desktop and Start Menu shortcuts, or **`StreamShield_0.2.5_x64_en-US.msi`** for enterprise deployment.
+Download **`StreamShield_0.2.6_x64-setup.exe`** for a standard Windows installation with Desktop and Start Menu shortcuts, or **`StreamShield_0.2.6_x64_en-US.msi`** for enterprise deployment.
 
 ---
 

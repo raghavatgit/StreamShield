@@ -13,6 +13,8 @@ import {
   IconGear,
   IconPower,
   IconCheck,
+  IconVolume,
+  IconVolumeOff,
 } from "./Icons";
 import { ThemeType, applyDynamicTheme } from "../utils/themeEngine";
 import { formatBackendError } from "../utils/win32ErrorCodes";
@@ -26,6 +28,7 @@ export default function TrayMenu() {
 
   const [windows, setWindows] = useState<WindowInfo[]>([]);
   const [shieldedExes, setShieldedExes] = useState<Set<string>>(new Set());
+  const [mutedExes, setMutedExes] = useState<Set<string>>(new Set());
   const [settings, setSettings] = useState<AppSettings>(() => ({
     autostart: false,
     start_minimized: false,
@@ -75,10 +78,13 @@ export default function TrayMenu() {
       const wins = await invoke<WindowInfo[]>("get_windows");
       setWindows(wins);
       const active = new Set<string>();
+      const muted = new Set<string>();
       for (const w of wins) {
         if (w.is_shielded) active.add(w.exe_name);
+        if (w.is_audio_muted) muted.add(w.exe_name);
       }
       setShieldedExes(active);
+      setMutedExes(muted);
     } catch (e) {
       console.error("TrayMenu window scan error:", e);
     }
@@ -152,6 +158,10 @@ export default function TrayMenu() {
       refreshWindows();
     });
 
+    const unlistenAudio = listen("audio_state_changed", () => {
+      refreshWindows();
+    });
+
     const unlistenSelfShield = listen<boolean>("self_shield_changed", (event) => {
       setSettings((prev) => ({ ...prev, self_stealth: event.payload }));
     });
@@ -170,6 +180,7 @@ export default function TrayMenu() {
       unlistenOpened.then((u) => u());
       unlistenSettings.then((u) => u());
       unlistenShield.then((u) => u());
+      unlistenAudio.then((u) => u());
       unlistenSelfShield.then((u) => u());
       unlistenWidget.then((u) => u());
       unlistenCompact.then((u) => u());
@@ -233,6 +244,27 @@ export default function TrayMenu() {
         s.delete(win.exe_name);
         return s;
       });
+    }
+  };
+
+  const handleToggleAudio = async (e: React.MouseEvent, win: WindowInfo) => {
+    e.stopPropagation();
+    const next = !mutedExes.has(win.exe_name);
+    setMutedExes((prev) => {
+      const s = new Set(prev);
+      if (next) s.add(win.exe_name);
+      else s.delete(win.exe_name);
+      return s;
+    });
+    try {
+      await invoke("toggle_audio_mute", {
+        exeName: win.exe_name,
+        pid: win.pid,
+        mute: next,
+      });
+    } catch (err) {
+      showError(err);
+      await refreshWindows();
     }
   };
 
@@ -424,36 +456,51 @@ export default function TrayMenu() {
           ) : (
             windows.map((w) => {
               const isSh = shieldedExes.has(w.exe_name);
+              const isMuted = mutedExes.has(w.exe_name);
               const isBusy = pendingExes.has(w.exe_name);
               const clean = w.exe_name.replace(/\.exe$/i, "");
               return (
-                <button
+                <div
                   key={`${w.pid}-${w.hwnd}`}
-                  type="button"
-                  role="menuitemcheckbox"
-                  aria-checked={isSh}
-                  className={`tray-app-row ${isSh ? "is-shielded" : ""} ${
-                    isBusy ? "is-busy" : ""
-                  }`}
-                  onClick={() => handleToggleApp(w)}
-                  disabled={isBusy}
-                  title={w.title || clean}
+                  className={`tray-app-row-wrap ${isSh ? "is-shielded" : ""}`}
                 >
-                  <span className="tray-app-icon-wrap">
-                    {w.icon_base64 ? (
-                      <img src={w.icon_base64} alt="" className="tray-app-icon" />
-                    ) : (
-                      <span className="tray-app-initial">{clean[0]?.toUpperCase() || "?"}</span>
-                    )}
-                  </span>
+                  <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={isSh}
+                    className={`tray-app-row ${isSh ? "is-shielded" : ""} ${
+                      isBusy ? "is-busy" : ""
+                    }`}
+                    onClick={() => handleToggleApp(w)}
+                    disabled={isBusy}
+                    title={w.title || clean}
+                  >
+                    <span className="tray-app-icon-wrap">
+                      {w.icon_base64 ? (
+                        <img src={w.icon_base64} alt="" className="tray-app-icon" />
+                      ) : (
+                        <span className="tray-app-initial">{clean[0]?.toUpperCase() || "?"}</span>
+                      )}
+                    </span>
 
-                  <span className="tray-app-name">{clean}</span>
+                    <span className="tray-app-name">{clean}</span>
 
-                  <span className={`tray-app-state ${isSh ? "is-shielded" : ""}`}>
-                    {isSh ? <IconCheck size={11} /> : <span className="tray-app-ring" />}
-                    <span>{isSh ? "Shielded" : "Open"}</span>
-                  </span>
-                </button>
+                    <span className={`tray-app-state ${isSh ? "is-shielded" : ""}`}>
+                      {isSh ? <IconCheck size={11} /> : <span className="tray-app-ring" />}
+                      <span>{isSh ? "Shielded" : "Open"}</span>
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`tray-app-audio-btn ${isMuted ? "is-muted" : ""}`}
+                    onClick={(e) => handleToggleAudio(e, w)}
+                    aria-pressed={isMuted}
+                    title={isMuted ? `Unmute ${clean}` : `Mute ${clean} audio`}
+                  >
+                    {isMuted ? <IconVolumeOff size={12} /> : <IconVolume size={12} />}
+                  </button>
+                </div>
               );
             })
           )}

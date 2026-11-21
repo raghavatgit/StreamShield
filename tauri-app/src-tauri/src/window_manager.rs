@@ -14,6 +14,8 @@ pub struct WindowInfo {
     pub title: String,
     pub exe_name: String,
     pub is_shielded: bool,
+    #[serde(default)]
+    pub is_audio_muted: bool,
     pub icon_base64: Option<String>,
 }
 
@@ -213,6 +215,7 @@ pub fn enumerate_windows(
             title,
             exe_name,
             is_shielded,
+            is_audio_muted: false,
             icon_base64,
         });
     }

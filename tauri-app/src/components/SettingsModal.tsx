@@ -4,16 +4,11 @@ import { ThemeType, THEMES, applyDynamicTheme } from "../utils/themeEngine";
 import { checkForAppUpdate, CURRENT_VERSION, UpdateInfo } from "../utils/updater";
 import {
   IconGear,
-  IconStartup,
   IconShield,
-  IconScanning,
   IconDisplay,
-  IconTools,
-  IconInfo,
   IconAlert,
   IconClose,
   IconCheck,
-  IconWidget,
 } from "./Icons";
 
 export interface AppSettings {
@@ -34,6 +29,16 @@ export interface AppSettings {
   widget_stealth: boolean;
   widget_x?: number | null;
   widget_y?: number | null;
+  audio_isolation_enabled?: boolean;
+  audio_stream_device_id?: string | null;
+  audio_monitor_device_id?: string | null;
+}
+
+export interface AudioDeviceInfo {
+  id: string;
+  name: string;
+  is_default: boolean;
+  is_virtual: boolean;
 }
 
 export interface OsInfo {
@@ -53,14 +58,12 @@ export interface CaptureEnvironment {
   summary: string;
 }
 
-
-
 const SCAN_INTERVALS = [
-  { value: 2000, label: "2 seconds (Fast & Responsive)" },
-  { value: 3000, label: "3 seconds (Recommended)" },
-  { value: 5000, label: "5 seconds (Balanced / Low CPU)" },
-  { value: 10000, label: "10 seconds (Battery Saver)" },
-  { value: 0, label: "Manual Refresh Only" },
+  { value: 2000, label: "2s (Fast)" },
+  { value: 3000, label: "3s (Default)" },
+  { value: 5000, label: "5s (Balanced)" },
+  { value: 10000, label: "10s (Eco)" },
+  { value: 0, label: "Manual" },
 ];
 
 interface Props {
@@ -88,11 +91,12 @@ export default function SettingsModal({
   isAdmin,
   osInfo: propOsInfo,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<"system" | "shield" | "performance" | "ui" | "maintenance">("system");
+  const [activeTab, setActiveTab] = useState<"general" | "protection" | "appearance">("general");
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [captureEnv, setCaptureEnv] = useState<CaptureEnvironment | null>(null);
+  const [audioDevices, setAudioDevices] = useState<AudioDeviceInfo[]>([]);
   const [localOsInfo, setLocalOsInfo] = useState<OsInfo | null>(propOsInfo ?? null);
   const osInfo = propOsInfo ?? localOsInfo;
 
@@ -107,24 +111,26 @@ export default function SettingsModal({
       const info = await checkForAppUpdate();
       if (info.hasUpdate) {
         setAvailableUpdate(info);
-        setUpdateResult(`v${info.latestVersion} available!`);
+        setUpdateResult(`v${info.latestVersion} available`);
       } else {
         setAvailableUpdate(null);
-        setUpdateResult("StreamShield is up to date");
+        setUpdateResult("Up to date");
       }
     } catch {
-      setUpdateResult("Could not reach update server");
+      setUpdateResult("Offline");
     } finally {
       setUpdateChecking(false);
     }
   };
 
-  // Load capture environment & OS diagnostics once when modal opens
   useEffect(() => {
     if (isOpen) {
       invoke<CaptureEnvironment>("get_capture_environment")
         .then((env) => setCaptureEnv(env))
-        .catch((err) => console.error("Failed to detect capture environment:", err));
+        .catch(() => {});
+      invoke<AudioDeviceInfo[]>("get_audio_devices")
+        .then((devs) => setAudioDevices(devs))
+        .catch(() => {});
       if (!propOsInfo) {
         invoke<OsInfo>("get_os_info")
           .then((info) => setLocalOsInfo(info))
@@ -133,7 +139,6 @@ export default function SettingsModal({
     }
   }, [isOpen, propOsInfo]);
 
-  // Close on Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -155,7 +160,6 @@ export default function SettingsModal({
     try {
       const updated = { ...settings, [key]: value };
       await onUpdateSettings(updated);
-      // Refresh capture env status after settings update
       const env = await invoke<CaptureEnvironment>("get_capture_environment").catch(() => null);
       if (env) setCaptureEnv(env);
     } finally {
@@ -176,266 +180,113 @@ export default function SettingsModal({
   return (
     <div className="settings-modal-backdrop" onClick={onClose}>
       <div className="settings-modal-card" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
+        {/* Compact Header */}
         <div className="settings-modal-header">
           <div className="settings-header-title-group">
             <div className="settings-header-glyph-box">
-              <IconGear size={18} className="settings-header-glyph" />
+              <IconGear size={16} />
             </div>
-            <div>
-              <h2 className="settings-title-text">StreamShield Preferences</h2>
-              <p className="settings-subtitle-text">Engine configuration, startup behavior & aesthetics</p>
-            </div>
+            <h2 className="settings-title-text">Preferences</h2>
           </div>
-          <button className="settings-close-cross" onClick={onClose} title="Close (Esc)">
-            <IconClose size={16} />
+          <button type="button" className="settings-close-cross" onClick={onClose} title="Close (Esc)" aria-label="Close preferences">
+            <IconClose size={15} />
           </button>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="settings-nav-strip">
+        {/* Clean 3-Tab Navigation */}
+        <div className="settings-nav-strip three-tabs" role="tablist">
           <button
-            className={`settings-nav-btn ${activeTab === "system" ? "is-active" : ""}`}
-            onClick={() => setActiveTab("system")}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "general"}
+            className={`settings-nav-btn ${activeTab === "general" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("general")}
           >
-            <IconStartup size={14} className="nav-btn-icon" />
-            <span>Startup</span>
+            <IconGear size={13} className="nav-btn-icon" />
+            <span>General</span>
           </button>
           <button
-            className={`settings-nav-btn ${activeTab === "shield" ? "is-active" : ""}`}
-            onClick={() => setActiveTab("shield")}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "protection"}
+            className={`settings-nav-btn ${activeTab === "protection" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("protection")}
           >
-            <IconShield size={14} className="nav-btn-icon" />
-            <span>Engine</span>
+            <IconShield size={13} className="nav-btn-icon" />
+            <span>Protection</span>
           </button>
           <button
-            className={`settings-nav-btn ${activeTab === "performance" ? "is-active" : ""}`}
-            onClick={() => setActiveTab("performance")}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "appearance"}
+            className={`settings-nav-btn ${activeTab === "appearance" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("appearance")}
           >
-            <IconScanning size={14} className="nav-btn-icon" />
-            <span>Scanning</span>
-          </button>
-          <button
-            className={`settings-nav-btn ${activeTab === "ui" ? "is-active" : ""}`}
-            onClick={() => setActiveTab("ui")}
-          >
-            <IconDisplay size={14} className="nav-btn-icon" />
-            <span>Display</span>
-          </button>
-          <button
-            className={`settings-nav-btn ${activeTab === "maintenance" ? "is-active" : ""}`}
-            onClick={() => setActiveTab("maintenance")}
-          >
-            <IconTools size={14} className="nav-btn-icon" />
-            <span>Tools</span>
+            <IconDisplay size={13} className="nav-btn-icon" />
+            <span>Appearance</span>
           </button>
         </div>
 
-        {/* Body Container */}
+        {/* Body */}
         <div className="settings-modal-body">
-          {/* TAB 1: SYSTEM & STARTUP */}
-          {activeTab === "system" && (
+          {/* TAB 1: GENERAL */}
+          {activeTab === "general" && (
             <div className="settings-section-pane">
-              <div className="setting-row-item">
-                <div className="setting-meta">
-                  <span className="setting-label">Launch on Windows Startup</span>
-                  <span className="setting-subtext">
-                    Automatically starts StreamShield when you log in to Windows
-                  </span>
-                </div>
-                <label className="toggle-control">
-                  <input
-                    type="checkbox"
-                    checked={settings.autostart}
-                    onChange={(e) => handleToggle("autostart", e.target.checked)}
-                    disabled={saving}
-                  />
-                  <span className="toggle-rail">
-                    <span className="toggle-knob" />
-                  </span>
-                </label>
-              </div>
-
-              <div className="setting-row-item">
-                <div className="setting-meta">
-                  <span className="setting-label">Start Minimized to System Tray</span>
-                  <span className="setting-subtext">
-                    Keep the main window hidden when StreamShield launches in the background
-                  </span>
-                </div>
-                <label className="toggle-control">
-                  <input
-                    type="checkbox"
-                    checked={settings.start_minimized}
-                    onChange={(e) => handleToggle("start_minimized", e.target.checked)}
-                    disabled={saving}
-                  />
-                  <span className="toggle-rail">
-                    <span className="toggle-knob" />
-                  </span>
-                </label>
-              </div>
-
-              <div className="setting-row-item">
-                <div className="setting-meta">
-                  <span className="setting-label">Shield StreamShield on Launch (App Stealth)</span>
-                  <span className="setting-subtext">
-                    Hides the StreamShield application window from all screen captures on startup
-                  </span>
-                </div>
-                <label className="toggle-control">
-                  <input
-                    type="checkbox"
-                    checked={settings.self_stealth}
-                    onChange={(e) => handleToggle("self_stealth", e.target.checked)}
-                    disabled={saving}
-                  />
-                  <span className="toggle-rail">
-                    <span className="toggle-knob" />
-                  </span>
-                </label>
-              </div>
-
-              <div className="settings-callout-box info">
-                <IconInfo size={16} className="callout-svg" />
-                <span className="callout-text">
-                  StreamShield runs with elevated Administrator privileges for hardware capture hook stability.
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: PRIVACY ENGINE */}
-          {activeTab === "shield" && (
-            <div className="settings-section-pane">
-              {/* Capture Environment Status Badge */}
-              {captureEnv && (
-                <div className={`capture-env-banner ${captureEnv.nvidia_detected || captureEnv.medal_detected ? "nvidia-active" : "standard"}`}>
-                  <div className="capture-env-icon-box">
-                    <IconShield size={16} />
+              <div className="settings-section-heading">Behavior</div>
+              <div className="settings-group-list">
+                <div className="settings-group-row">
+                  <div className="setting-meta">
+                    <span className="setting-label">Launch at login</span>
+                    <span className="setting-subtext">Start StreamShield with Windows</span>
                   </div>
-                  <div className="capture-env-meta">
-                    <div className="capture-env-title">
-                      {captureEnv.nvidia_detected
-                        ? "NVIDIA Capture Detected"
-                        : captureEnv.medal_detected
-                        ? "Medal.tv Capture Detected"
-                        : captureEnv.obs_detected || captureEnv.discord_detected
-                        ? "OBS Studio / Discord Active"
-                        : "Standard Capture Environment"}
-                    </div>
-                    <div className="capture-env-desc">{captureEnv.summary}</div>
+                  <label className="toggle-control">
+                    <input
+                      type="checkbox"
+                      checked={settings.autostart}
+                      onChange={(e) => handleToggle("autostart", e.target.checked)}
+                      disabled={saving}
+                    />
+                    <span className="toggle-rail"><span className="toggle-knob" /></span>
+                  </label>
+                </div>
+
+                <div className="settings-group-row">
+                  <div className="setting-meta">
+                    <span className="setting-label">Start in tray</span>
+                    <span className="setting-subtext">Keep window hidden on launch</span>
                   </div>
-                </div>
-              )}
-
-              {osInfo && osInfo.build > 0 && !osInfo.supports_exclude_from_capture && (
-                <div className="settings-callout-box info">
-                  <IconInfo size={16} className="callout-svg" />
-                  <span className="callout-text">
-                    {osInfo.display_name} detected. Transparent exclusion requires Windows 10 v2004 (Build 19041+); StreamShield automatically uses Black Screen Mask fallback.
-                  </span>
-                </div>
-              )}
-
-              <div className="setting-stacked-block">
-                <div className="setting-meta">
-                  <span className="setting-label">Capture Exclusion Affinity Mode</span>
-                  <span className="setting-subtext">
-                    Select how Windows display affinity masks shielded application windows
-                  </span>
+                  <label className="toggle-control">
+                    <input
+                      type="checkbox"
+                      checked={settings.start_minimized}
+                      onChange={(e) => handleToggle("start_minimized", e.target.checked)}
+                      disabled={saving}
+                    />
+                    <span className="toggle-rail"><span className="toggle-knob" /></span>
+                  </label>
                 </div>
 
-                <div className="shield-mode-options-grid">
-                  <div
-                    className={`shield-mode-card ${settings.shield_mode === "exclude" ? "is-selected" : ""}`}
-                    onClick={() => handleToggle("shield_mode", "exclude")}
-                  >
-                    <div className="shield-mode-card-header">
-                      <span className="mode-tag">Best for OBS & Discord</span>
-                      {settings.shield_mode === "exclude" && <IconCheck size={14} className="mode-check" />}
-                    </div>
-                    <div className="shield-mode-title">Invisible / Transparent</div>
-                    <div className="shield-mode-desc">
-                      Protected windows vanish entirely from screen captures. Content behind the window is shown.
-                    </div>
+                <div className="settings-group-row">
+                  <div className="setting-meta">
+                    <span className="setting-label">App stealth on launch</span>
+                    <span className="setting-subtext">Hide StreamShield itself from captures</span>
                   </div>
+                  <label className="toggle-control">
+                    <input
+                      type="checkbox"
+                      checked={settings.self_stealth}
+                      onChange={(e) => handleToggle("self_stealth", e.target.checked)}
+                      disabled={saving}
+                    />
+                    <span className="toggle-rail"><span className="toggle-knob" /></span>
+                  </label>
+                </div>
 
-                  <div
-                    className={`shield-mode-card ${settings.shield_mode === "monitor" ? "is-selected" : ""}`}
-                    onClick={() => handleToggle("shield_mode", "monitor")}
-                  >
-                    <div className="shield-mode-card-header">
-                      <span className="mode-tag highlight">NVIDIA ShadowPlay & Universal</span>
-                      {settings.shield_mode === "monitor" && <IconCheck size={14} className="mode-check" />}
-                    </div>
-                    <div className="shield-mode-title">Black Screen Mask</div>
-                    <div className="shield-mode-desc">
-                      Protected windows appear as solid black boxes. 100% compatible with NVIDIA Instant Replay without DRM recording pauses.
-                    </div>
+                <div className="settings-group-row">
+                  <div className="setting-meta">
+                    <span className="setting-label">Scan interval</span>
+                    <span className="setting-subtext">Window detection frequency</span>
                   </div>
-                </div>
-              </div>
-
-              <div className="setting-row-item">
-                <div className="setting-meta">
-                  <span className="setting-label">Auto-Reapply Shields in Background</span>
-                  <span className="setting-subtext">
-                    Automatically injects protection when you open new windows or restart protected apps
-                  </span>
-                </div>
-                <label className="toggle-control">
-                  <input
-                    type="checkbox"
-                    checked={settings.auto_reapply}
-                    onChange={(e) => handleToggle("auto_reapply", e.target.checked)}
-                    disabled={saving}
-                  />
-                  <span className="toggle-rail">
-                    <span className="toggle-knob" />
-                  </span>
-                </label>
-              </div>
-
-              <div className="setting-row-item">
-                <div className="setting-meta">
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span className="setting-label">Hardware Multiplane Overlay (MPO) Optimization</span>
-                    {settings.mpo_fix && (
-                      <span className="status-pill-badge active">Active</span>
-                    )}
-                  </div>
-                  <span className="setting-subtext">
-                    Disables hardware MPO overlay planes in Windows DWM so GPU-accelerated capture engines (ShadowPlay, OBS Game Capture) never bypass window privacy masks (requires Windows reboot to take effect)
-                  </span>
-                </div>
-                <label className="toggle-control">
-                  <input
-                    type="checkbox"
-                    checked={settings.mpo_fix}
-                    onChange={(e) => handleToggle("mpo_fix", e.target.checked)}
-                    disabled={saving}
-                  />
-                  <span className="toggle-rail">
-                    <span className="toggle-knob" />
-                  </span>
-                </label>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: PERFORMANCE */}
-          {activeTab === "performance" && (
-            <div className="settings-section-pane">
-              <div className="setting-row-item">
-                <div className="setting-meta">
-                  <span className="setting-label">Window Scan Interval</span>
-                  <span className="setting-subtext">
-                    Controls how frequently StreamShield checks for newly opened and closed windows
-                  </span>
-                </div>
-
-                <div className="setting-control-right">
                   <select
                     className="settings-select-input"
                     value={settings.poll_interval_ms}
@@ -443,127 +294,356 @@ export default function SettingsModal({
                     disabled={saving}
                   >
                     {SCAN_INTERVALS.map((item) => (
-                      <option key={item.value} value={item.value}>
-                        {item.label}
+                      <option key={item.value} value={item.value}>{item.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="settings-section-heading">Maintenance</div>
+              <div className="settings-action-strip">
+                <button
+                  type="button"
+                  className="danger-outline-btn"
+                  onClick={() => setConfirmClearOpen(true)}
+                  disabled={shieldedCount === 0}
+                >
+                  Clear Shields ({shieldedCount})
+                </button>
+                <button
+                  type="button"
+                  className="warning-outline-btn"
+                  onClick={() => setConfirmResetOpen(true)}
+                >
+                  Reset Defaults
+                </button>
+                <button
+                  type="button"
+                  className="warning-outline-btn"
+                  onClick={handleCheckForUpdates}
+                  disabled={updateChecking}
+                >
+                  {updateChecking ? "Checking..." : updateResult || "Check Updates"}
+                </button>
+                {availableUpdate?.releaseUrl && (
+                  <button
+                    type="button"
+                    className="diag-download-btn"
+                    onClick={() => invoke("open_external_url", { url: availableUpdate.releaseUrl })}
+                  >
+                    Get v{availableUpdate.latestVersion}
+                  </button>
+                )}
+              </div>
+
+              <div className="settings-meta-footer">
+                <span>v{CURRENT_VERSION}</span>
+                <span>•</span>
+                <span>{osInfo ? osInfo.display_name : "Windows"}</span>
+                <span>•</span>
+                <span>{isAdmin ? "Admin" : "Standard"}</span>
+                <span>•</span>
+                <span>{totalWindows} windows</span>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: PROTECTION */}
+          {activeTab === "protection" && (
+            <div className="settings-section-pane">
+              {captureEnv && (captureEnv.nvidia_detected || captureEnv.medal_detected || captureEnv.obs_detected || captureEnv.discord_detected) && (
+                <div className={`capture-env-pill ${captureEnv.nvidia_detected || captureEnv.medal_detected ? "nvidia-active" : ""}`}>
+                  <IconShield size={13} />
+                  <span>
+                    {captureEnv.nvidia_detected
+                      ? "NVIDIA Capture active - Black Mask recommended"
+                      : captureEnv.medal_detected
+                      ? "Medal.tv active - Black Mask recommended"
+                      : "OBS / Discord active - Transparent recommended"}
+                  </span>
+                </div>
+              )}
+
+              <div className="settings-section-heading">Capture Mask Mode</div>
+              <div className="shield-mode-options-grid">
+                <button
+                  type="button"
+                  className={`shield-mode-card ${settings.shield_mode === "exclude" ? "is-selected" : ""}`}
+                  onClick={() => handleToggle("shield_mode", "exclude")}
+                >
+                  <div className="shield-mode-card-header">
+                    <span className="mode-tag">OBS & Discord</span>
+                    {settings.shield_mode === "exclude" && <IconCheck size={13} className="mode-check" />}
+                  </div>
+                  <div className="shield-mode-title">Transparent</div>
+                  <div className="shield-mode-desc">Windows vanish completely from capture.</div>
+                </button>
+
+                <button
+                  type="button"
+                  className={`shield-mode-card ${settings.shield_mode === "monitor" ? "is-selected" : ""}`}
+                  onClick={() => handleToggle("shield_mode", "monitor")}
+                >
+                  <div className="shield-mode-card-header">
+                    <span className="mode-tag highlight">ShadowPlay / Medal</span>
+                    {settings.shield_mode === "monitor" && <IconCheck size={13} className="mode-check" />}
+                  </div>
+                  <div className="shield-mode-title">Black Mask</div>
+                  <div className="shield-mode-desc">Solid black box; prevents DRM pauses.</div>
+                </button>
+              </div>
+
+              <div className="settings-section-heading">Engine</div>
+              <div className="settings-group-list">
+                <div className="settings-group-row">
+                  <div className="setting-meta">
+                    <span className="setting-label">Auto-reapply shields</span>
+                    <span className="setting-subtext">Re-shield apps when restarted</span>
+                  </div>
+                  <label className="toggle-control">
+                    <input
+                      type="checkbox"
+                      checked={settings.auto_reapply}
+                      onChange={(e) => handleToggle("auto_reapply", e.target.checked)}
+                      disabled={saving}
+                    />
+                    <span className="toggle-rail"><span className="toggle-knob" /></span>
+                  </label>
+                </div>
+
+                <div className="settings-group-row">
+                  <div className="setting-meta">
+                    <div className="setting-label-row">
+                      <span className="setting-label">Hardware MPO fix</span>
+                      {settings.mpo_fix && <span className="status-pill-badge active">Active</span>}
+                    </div>
+                    <span className="setting-subtext">Prevents GPU overlay bypass (reboot required)</span>
+                  </div>
+                  <label className="toggle-control">
+                    <input
+                      type="checkbox"
+                      checked={settings.mpo_fix}
+                      onChange={(e) => handleToggle("mpo_fix", e.target.checked)}
+                      disabled={saving}
+                    />
+                    <span className="toggle-rail"><span className="toggle-knob" /></span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="settings-section-heading">Stream Audio Isolation</div>
+              <div className="settings-group-list">
+                <div className="settings-group-row">
+                  <div className="setting-meta">
+                    <span className="setting-label">Private headphone routing</span>
+                    <span className="setting-subtext">You hear isolated apps; streams & screenshares don&apos;t</span>
+                  </div>
+                  <label className="toggle-control">
+                    <input
+                      type="checkbox"
+                      checked={!!settings.audio_isolation_enabled}
+                      onChange={(e) => handleToggle("audio_isolation_enabled", e.target.checked)}
+                      disabled={saving}
+                    />
+                    <span className="toggle-rail"><span className="toggle-knob" /></span>
+                  </label>
+                </div>
+
+                <div className="settings-group-row">
+                  <div className="setting-meta">
+                    <span className="setting-label">Stream Bus (Virtual)</span>
+                    <span className="setting-subtext">Set as Windows Default for OBS / Discord</span>
+                  </div>
+                  <select
+                    className="settings-select-input"
+                    value={settings.audio_stream_device_id || ""}
+                    onChange={(e) => handleToggle("audio_stream_device_id", e.target.value || null)}
+                    disabled={saving}
+                    style={{ maxWidth: "185px" }}
+                  >
+                    <option value="">Select virtual cable...</option>
+                    {audioDevices.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.is_virtual ? "[Virtual] " : ""}{d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="settings-group-row">
+                  <div className="setting-meta">
+                    <span className="setting-label">Your Headphones</span>
+                    <span className="setting-subtext">Isolated apps route directly here</span>
+                  </div>
+                  <select
+                    className="settings-select-input"
+                    value={settings.audio_monitor_device_id || ""}
+                    onChange={(e) => handleToggle("audio_monitor_device_id", e.target.value || null)}
+                    disabled={saving}
+                    style={{ maxWidth: "185px" }}
+                  >
+                    <option value="">Select headphones...</option>
+                    {audioDevices.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.is_default ? "[Default] " : ""}{d.name}
                       </option>
                     ))}
                   </select>
                 </div>
               </div>
 
-              <div className="settings-callout-box info">
-                <IconInfo size={16} className="callout-svg" />
-                <span className="callout-text">
-                  StreamShield uses lightweight Win32 API window enumeration with near-zero CPU and memory footprint.
-                </span>
-              </div>
+              {!audioDevices.some((d) => d.is_virtual) && (
+                <button
+                  type="button"
+                  className="capture-env-pill"
+                  style={{ cursor: "pointer", width: "fit-content" }}
+                  onClick={() => invoke("open_external_url", { url: "https://vb-audio.com/Cable/" })}
+                >
+                  <span>No virtual cable detected - Get VB-Cable (free) ↗</span>
+                </button>
+              )}
             </div>
           )}
 
-          {/* TAB 4: DISPLAY & THEME */}
-          {activeTab === "ui" && (
+          {/* TAB 3: APPEARANCE */}
+          {activeTab === "appearance" && (
             <div className="settings-section-pane">
-              <div className="setting-stacked-block">
-                <div className="setting-meta">
-                  <span className="setting-label">Color Palette & Interface Theme</span>
-                  <span className="setting-subtext">Choose your visual aesthetic and ambient glow style</span>
-                </div>
-
-                <div className="theme-selection-grid">
-                  {THEMES.map((t) => (
-                    <div
-                      key={t.id}
-                      className={`theme-card-preview ${settings.theme === t.id ? "is-active" : ""}`}
-                      onClick={() => {
-                        handleToggle("theme", t.id);
-                        applyDynamicTheme(t.id);
-                      }}
-                    >
-                      <div className="theme-swatch-strip">
-                        {t.colors.map((c, i) => (
-                          <span key={i} className="theme-color-dot" style={{ backgroundColor: c }} />
-                        ))}
-                      </div>
-                      <span className="theme-card-name">{t.name}</span>
-                      {settings.theme === t.id && <IconCheck size={14} className="theme-active-tick" />}
+              <div className="settings-section-heading">Theme</div>
+              <div className="theme-selection-grid">
+                {THEMES.map((t) => (
+                  <button
+                    type="button"
+                    key={t.id}
+                    className={`theme-card-preview ${settings.theme === t.id ? "is-active" : ""}`}
+                    onClick={() => {
+                      handleToggle("theme", t.id);
+                      applyDynamicTheme(t.id);
+                    }}
+                  >
+                    <div className="theme-swatch-strip">
+                      {t.colors.map((c, i) => (
+                        <span key={i} className="theme-color-dot" style={{ backgroundColor: c }} />
+                      ))}
                     </div>
-                  ))}
-                </div>
+                    <span className="theme-card-name">{t.name}</span>
+                    {settings.theme === t.id && <IconCheck size={12} className="theme-active-tick" />}
+                  </button>
+                ))}
               </div>
 
-              <div className="setting-row-item">
-                <div className="setting-meta">
-                  <span className="setting-label">Compact Row Layout</span>
-                  <span className="setting-subtext">
-                    Reduces list spacing to fit more application windows on screen at once
-                  </span>
-                </div>
-                <label className="toggle-control">
-                  <input
-                    type="checkbox"
-                    checked={settings.compact_mode}
-                    onChange={(e) => handleToggle("compact_mode", e.target.checked)}
-                    disabled={saving}
-                  />
-                  <span className="toggle-rail">
-                    <span className="toggle-knob" />
-                  </span>
-                </label>
-              </div>
-
-              <div className="setting-row-item">
-                <div className="setting-meta">
-                  <span className="setting-label">Display Process PID Badges</span>
-                  <span className="setting-subtext">
-                    Shows numeric Windows Process IDs alongside application executable names
-                  </span>
-                </div>
-                <label className="toggle-control">
-                  <input
-                    type="checkbox"
-                    checked={settings.show_pid}
-                    onChange={(e) => handleToggle("show_pid", e.target.checked)}
-                    disabled={saving}
-                  />
-                  <span className="toggle-rail">
-                    <span className="toggle-knob" />
-                  </span>
-                </label>
-              </div>
-
-              <div className="setting-row-item">
-                <div className="setting-meta">
-                  <span className="setting-label">Confirm Batch Actions</span>
-                  <span className="setting-subtext">
-                    Prompts for confirmation before shielding or unshielding all applications simultaneously
-                  </span>
-                </div>
-                <label className="toggle-control">
-                  <input
-                    type="checkbox"
-                    checked={settings.confirm_batch}
-                    onChange={(e) => handleToggle("confirm_batch", e.target.checked)}
-                    disabled={saving}
-                  />
-                  <span className="toggle-rail">
-                    <span className="toggle-knob" />
-                  </span>
-                </label>
-              </div>
-
-              {/* Desktop Screen Widget Section */}
-              <div className="settings-subsection-divider" />
-              <div className="settings-field-group">
-                <div className="settings-group-heading">
-                  <IconWidget size={14} className="settings-group-icon" />
-                  <span>Desktop Screen Widget</span>
-                </div>
-                <div className="setting-row-item">
+              <div className="settings-section-heading">Interface</div>
+              <div className="settings-group-list">
+                <div className="settings-group-row">
                   <div className="setting-meta">
-                    <span className="setting-label">Enable Floating Screen Widget</span>
-                    <span className="setting-subtext">
-                      Displays a lightweight, always-accessible floating HUD on your desktop to monitor and toggle app capture protection without opening the main window
-                    </span>
+                    <span className="setting-label">Compact mode</span>
+                    <span className="setting-subtext">Minimal icon grid window</span>
+                  </div>
+                  <label className="toggle-control">
+                    <input
+                      type="checkbox"
+                      checked={settings.compact_mode}
+                      onChange={(e) => handleToggle("compact_mode", e.target.checked)}
+                      disabled={saving}
+                    />
+                    <span className="toggle-rail"><span className="toggle-knob" /></span>
+                  </label>
+                </div>
+
+                <div className="settings-group-row">
+                  <div className="setting-meta">
+                    <span className="setting-label">Show PID badges</span>
+                    <span className="setting-subtext">Display process IDs next to names</span>
+                  </div>
+                  <label className="toggle-control">
+                    <input
+                      type="checkbox"
+                      checked={settings.show_pid}
+                      onChange={(e) => handleToggle("show_pid", e.target.checked)}
+                      disabled={saving}
+                    />
+                    <span className="toggle-rail"><span className="toggle-knob" /></span>
+                  </label>
+                </div>
+
+                <div className="settings-group-row">
+                  <div className="setting-meta">
+                    <span className="setting-label">Confirm batch actions</span>
+                    <span className="setting-subtext">Prompt before Shield All / Clear</span>
+                  </div>
+                  <label className="toggle-control">
+                    <input
+                      type="checkbox"
+                      checked={settings.confirm_batch}
+                      onChange={(e) => handleToggle("confirm_batch", e.target.checked)}
+                      disabled={saving}
+                    />
+                    <span className="toggle-rail"><span className="toggle-knob" /></span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="settings-section-heading">Desktop Widget</div>
+              <div className="widget-style-grid horizontal">
+                <button
+                  type="button"
+                  className={`widget-style-card compact ${(!settings.widget_style || settings.widget_style === "pill") ? "is-selected" : ""}`}
+                  onClick={() => handleSelectWidgetStyle("pill")}
+                >
+                  <div className="widget-style-preview pill-preview">
+                    <div className="preview-pill-bar">
+                      <span className="mini-pill-dot" />
+                      <span className="mini-pill-tag">3/5</span>
+                      <div className="mini-pill-icons">
+                        <span className="mini-icon is-active" />
+                        <span className="mini-icon" />
+                      </div>
+                    </div>
+                  </div>
+                  <span className="widget-style-name">Pill</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`widget-style-card compact ${settings.widget_style === "dock" ? "is-selected" : ""}`}
+                  onClick={() => handleSelectWidgetStyle("dock")}
+                >
+                  <div className="widget-style-preview dock-preview">
+                    <div className="preview-dock-shell">
+                      <span className="preview-dock-bar" />
+                      <div className="preview-dock-grid">
+                        <span className="dock-dot active" />
+                        <span className="dock-dot active" />
+                        <span className="dock-dot" />
+                        <span className="dock-dot" />
+                      </div>
+                    </div>
+                  </div>
+                  <span className="widget-style-name">Dock</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`widget-style-card compact ${settings.widget_style === "badge" ? "is-selected" : ""}`}
+                  onClick={() => handleSelectWidgetStyle("badge")}
+                >
+                  <div className="widget-style-preview badge-preview">
+                    <div className="preview-badge-circle">
+                      <svg className="preview-badge-ring" viewBox="0 0 28 28" aria-hidden="true">
+                        <circle cx="14" cy="14" r="11" className="preview-badge-track" />
+                        <circle cx="14" cy="14" r="11" className="preview-badge-arc" />
+                      </svg>
+                      <span className="mini-badge-dot" />
+                    </div>
+                  </div>
+                  <span className="widget-style-name">Badge</span>
+                </button>
+              </div>
+
+              <div className="settings-group-list">
+                <div className="settings-group-row">
+                  <div className="setting-meta">
+                    <span className="setting-label">Floating widget</span>
+                    <span className="setting-subtext">Show quick-control desktop overlay</span>
                   </div>
                   <label className="toggle-control">
                     <input
@@ -572,85 +652,14 @@ export default function SettingsModal({
                       onChange={(e) => handleToggle("widget_enabled", e.target.checked)}
                       disabled={saving}
                     />
-                    <span className="toggle-rail">
-                      <span className="toggle-knob" />
-                    </span>
+                    <span className="toggle-rail"><span className="toggle-knob" /></span>
                   </label>
                 </div>
 
-                <div className="widget-style-selector-label">Widget Display Style</div>
-                <div className="widget-style-grid">
-                  <div
-                    className={`widget-style-card ${(!settings.widget_style || settings.widget_style === "pill") ? "is-selected" : ""}`}
-                    onClick={() => handleSelectWidgetStyle("pill")}
-                  >
-                    <div className="widget-style-preview pill-preview">
-                      <div className="preview-pill-bar">
-                        <span className="mini-pill-dot" />
-                        <span className="mini-pill-tag">3/5</span>
-                        <div className="mini-pill-icons">
-                          <span className="mini-icon is-active" />
-                          <span className="mini-icon is-active" />
-                          <span className="mini-icon" />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="widget-style-info">
-                      <div className="widget-style-name">Dynamic Pill / Island</div>
-                      <div className="widget-style-desc">Precision floating capsule with live telemetry dot, illuminated app indicators, master shield & stealth eye</div>
-                    </div>
-                    {(!settings.widget_style || settings.widget_style === "pill") && <IconCheck size={14} className="theme-active-tick" />}
-                  </div>
-
-                  <div
-                    className={`widget-style-card ${settings.widget_style === "dock" ? "is-selected" : ""}`}
-                    onClick={() => handleSelectWidgetStyle("dock")}
-                  >
-                    <div className="widget-style-preview dock-preview">
-                      <div className="preview-dock-shell">
-                        <span className="preview-dock-bar" />
-                        <div className="preview-dock-grid">
-                          <span className="dock-dot active" />
-                          <span className="dock-dot active" />
-                          <span className="dock-dot" />
-                          <span className="dock-dot" />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="widget-style-info">
-                      <div className="widget-style-name">Floating Compact Dock</div>
-                      <div className="widget-style-desc">Command deck with top coverage telemetry bar, 4-column squircle grid, and integrated mode switcher</div>
-                    </div>
-                    {settings.widget_style === "dock" && <IconCheck size={14} className="theme-active-tick" />}
-                  </div>
-
-                  <div
-                    className={`widget-style-card ${settings.widget_style === "badge" ? "is-selected" : ""}`}
-                    onClick={() => handleSelectWidgetStyle("badge")}
-                  >
-                    <div className="widget-style-preview badge-preview">
-                      <div className="preview-badge-circle">
-                        <svg className="preview-badge-ring" viewBox="0 0 28 28" aria-hidden="true">
-                          <circle cx="14" cy="14" r="11" className="preview-badge-track" />
-                          <circle cx="14" cy="14" r="11" className="preview-badge-arc" />
-                        </svg>
-                        <span className="mini-badge-dot" />
-                      </div>
-                    </div>
-                    <div className="widget-style-info">
-                      <div className="widget-style-name">Corner Status Badge</div>
-                      <div className="widget-style-desc">Orbital progress ring framing the StreamShield emblem with an expandable quick-control HUD</div>
-                    </div>
-                    {settings.widget_style === "badge" && <IconCheck size={14} className="theme-active-tick" />}
-                  </div>
-                </div>
-
-                <div className="setting-row-item" style={{ marginTop: "12px" }}>
+                <div className="settings-group-row">
                   <div className="setting-meta">
-                    <span className="setting-label">Widget Always on Top</span>
-                    <span className="setting-subtext">
-                      Pins the floating widget above full-screen games, streaming tools, and other application windows
-                    </span>
+                    <span className="setting-label">Always on top</span>
+                    <span className="setting-subtext">Pin widget above other windows</span>
                   </div>
                   <label className="toggle-control">
                     <input
@@ -659,18 +668,14 @@ export default function SettingsModal({
                       onChange={(e) => handleToggle("widget_always_on_top", e.target.checked)}
                       disabled={saving}
                     />
-                    <span className="toggle-rail">
-                      <span className="toggle-knob" />
-                    </span>
+                    <span className="toggle-rail"><span className="toggle-knob" /></span>
                   </label>
                 </div>
 
-                <div className="setting-row-item">
+                <div className="settings-group-row">
                   <div className="setting-meta">
-                    <span className="setting-label">Widget Capture Stealth</span>
-                    <span className="setting-subtext">
-                      Masks the widget with WDA_EXCLUDEFROMCAPTURE so it is visible to you on your desktop, but completely invisible in OBS, Discord, and Medal recordings
-                    </span>
+                    <span className="setting-label">Hide widget from capture</span>
+                    <span className="setting-subtext">Invisible in OBS, Discord & recordings</span>
                   </div>
                   <label className="toggle-control">
                     <input
@@ -679,122 +684,36 @@ export default function SettingsModal({
                       onChange={(e) => handleToggle("widget_stealth", e.target.checked)}
                       disabled={saving}
                     />
-                    <span className="toggle-rail">
-                      <span className="toggle-knob" />
-                    </span>
+                    <span className="toggle-rail"><span className="toggle-knob" /></span>
                   </label>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 5: MAINTENANCE & RESET */}
-          {activeTab === "maintenance" && (
-            <div className="settings-section-pane">
-              <div className="maintenance-action-card">
-                <div className="maintenance-meta">
-                  <div className="maintenance-title">Clear All Shielded Applications</div>
-                  <div className="maintenance-desc">
-                    Immediately unshields all {shieldedCount} protected app(s) and restores standard capture visibility.
-                  </div>
-                </div>
-                <button
-                  className="danger-outline-btn"
-                  onClick={() => setConfirmClearOpen(true)}
-                  disabled={shieldedCount === 0}
-                >
-                  Clear All ({shieldedCount})
-                </button>
-              </div>
-
-              <div className="maintenance-action-card">
-                <div className="maintenance-meta">
-                  <div className="maintenance-title">Restore Factory Default Settings</div>
-                  <div className="maintenance-desc">
-                    Resets startup, engine parameters, scan interval, and theme preferences to defaults.
-                  </div>
-                </div>
-                <button className="warning-outline-btn" onClick={() => setConfirmResetOpen(true)}>
-                  Reset Defaults
-                </button>
-              </div>
-
-              <div className="app-diagnostics-footer">
-                <div className="diag-row">
-                  <span className="diag-key">Publisher:</span>
-                  <span className="diag-val">Raghav Goyal</span>
-                </div>
-                <div className="diag-row">
-                  <span className="diag-key">Version:</span>
-                  <span className="diag-val">v{CURRENT_VERSION}</span>
-                </div>
-                <div className="diag-row">
-                  <span className="diag-key">Windows OS:</span>
-                  <span className="diag-val">
-                    {osInfo ? `${osInfo.display_name} (${osInfo.supports_exclude_from_capture ? "Full Exclude" : "Monitor Fallback"})` : "Detecting..."}
-                  </span>
-                </div>
-                <div className="diag-row">
-                  <span className="diag-key">Privileges:</span>
-                  <span className="diag-val">{isAdmin ? "Administrator" : "Standard"}</span>
-                </div>
-                <div className="diag-row">
-                  <span className="diag-key">Windows:</span>
-                  <span className="diag-val">{totalWindows} detected</span>
-                </div>
-
-                <div className="diag-update-section">
-                  <button
-                    type="button"
-                    className="diag-update-btn"
-                    onClick={handleCheckForUpdates}
-                    disabled={updateChecking}
-                  >
-                    {updateChecking ? "Checking..." : "Check for Updates"}
-                  </button>
-                  {updateResult && (
-                    <span className={`diag-update-status ${availableUpdate ? "is-update" : ""}`}>
-                      {updateResult}
-                    </span>
-                  )}
-                  {availableUpdate?.releaseUrl && (
-                    <button
-                      type="button"
-                      className="diag-download-btn"
-                      onClick={() => invoke("open_external_url", { url: availableUpdate.releaseUrl })}
-                    >
-                      Download v{availableUpdate.latestVersion}
-                    </button>
-                  )}
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Confirmation Modal Overlays */}
+        {/* Confirmation Dialogs */}
         {confirmClearOpen && (
           <div className="settings-confirm-overlay" onClick={() => setConfirmClearOpen(false)}>
             <div className="settings-confirm-card" onClick={(e) => e.stopPropagation()}>
               <div className="confirm-icon-row">
-                <IconAlert size={22} className="confirm-alert-icon" />
+                <IconAlert size={20} className="confirm-alert-icon" />
                 <h3 className="confirm-title">Clear all shielded apps?</h3>
               </div>
               <p className="confirm-text">
-                This will unshield all {shieldedCount} protected application windows, making them visible to all screen captures.
+                Unshields all {shieldedCount} protected window(s) immediately.
               </p>
               <div className="confirm-btn-row">
-                <button className="confirm-cancel-btn" onClick={() => setConfirmClearOpen(false)}>
-                  Cancel
-                </button>
+                <button type="button" className="confirm-cancel-btn" onClick={() => setConfirmClearOpen(false)}>Cancel</button>
                 <button
+                  type="button"
                   className="confirm-danger-btn"
                   onClick={async () => {
                     await onClearAllShields();
                     setConfirmClearOpen(false);
                   }}
                 >
-                  Yes, Unshield All
+                  Unshield All
                 </button>
               </div>
             </div>
@@ -805,24 +724,23 @@ export default function SettingsModal({
           <div className="settings-confirm-overlay" onClick={() => setConfirmResetOpen(false)}>
             <div className="settings-confirm-card" onClick={(e) => e.stopPropagation()}>
               <div className="confirm-icon-row">
-                <IconAlert size={22} className="confirm-alert-icon" />
-                <h3 className="confirm-title">Reset all settings to default?</h3>
+                <IconAlert size={20} className="confirm-alert-icon" />
+                <h3 className="confirm-title">Reset preferences?</h3>
               </div>
               <p className="confirm-text">
-                This will restore all preferences (startup, theme, scan interval, shield mode) to their initial values.
+                Restores startup, engine, theme, and widget settings to defaults.
               </p>
               <div className="confirm-btn-row">
-                <button className="confirm-cancel-btn" onClick={() => setConfirmResetOpen(false)}>
-                  Cancel
-                </button>
+                <button type="button" className="confirm-cancel-btn" onClick={() => setConfirmResetOpen(false)}>Cancel</button>
                 <button
+                  type="button"
                   className="confirm-danger-btn"
                   onClick={async () => {
                     await onResetSettings();
                     setConfirmResetOpen(false);
                   }}
                 >
-                  Yes, Reset Defaults
+                  Reset
                 </button>
               </div>
             </div>

@@ -1,6 +1,6 @@
 [package]
 name = "streamshield"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 authors = ["Raghav Goyal"]
 description = "Stream Privacy Manager"
@@ -26,5 +26,6 @@ winapi = { version = "0.3", features = [
   "tlhelp32", "wingdi", "dwmapi",
   "combaseapi", "objbase", "unknwnbase", "guiddef", "winbase",
   "winreg", "wow64apiset",
+  "mmdeviceapi", "audioclient", "propsys", "roapi", "winstring", "hstring", "mmreg",
 ] }
 

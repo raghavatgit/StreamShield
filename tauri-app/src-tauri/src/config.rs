@@ -17,6 +17,7 @@ fn default_widget_enabled() -> bool { false }
 fn default_widget_style() -> String { "pill".to_string() }
 fn default_widget_always_on_top() -> bool { true }
 fn default_widget_stealth() -> bool { true }
+fn default_audio_isolation_enabled() -> bool { false }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -54,6 +55,12 @@ pub struct AppSettings {
     pub widget_x: Option<i32>,
     #[serde(default)]
     pub widget_y: Option<i32>,
+    #[serde(default = "default_audio_isolation_enabled")]
+    pub audio_isolation_enabled: bool,
+    #[serde(default)]
+    pub audio_stream_device_id: Option<String>,
+    #[serde(default)]
+    pub audio_monitor_device_id: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -76,6 +83,9 @@ impl Default for AppSettings {
             widget_stealth: default_widget_stealth(),
             widget_x: None,
             widget_y: None,
+            audio_isolation_enabled: default_audio_isolation_enabled(),
+            audio_stream_device_id: None,
+            audio_monitor_device_id: None,
         }
     }
 }
@@ -84,6 +94,8 @@ impl Default for AppSettings {
 pub struct ShieldConfig {
     #[serde(default)]
     pub shielded_exes: HashSet<String>,
+    #[serde(default)]
+    pub muted_exes: HashSet<String>,
     #[serde(default)]
     pub settings: AppSettings,
 }
@@ -103,6 +115,7 @@ pub fn load_config() -> ShieldConfig {
         .and_then(|d| serde_json::from_str(&d).ok())
         .unwrap_or_default();
     config.shielded_exes = config.shielded_exes.into_iter().map(|s| s.to_lowercase()).collect();
+    config.muted_exes = config.muted_exes.into_iter().map(|s| s.to_lowercase()).collect();
     config
 }
 
